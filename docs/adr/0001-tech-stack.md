@@ -16,7 +16,7 @@
 | HTTP | Hono + `@hono/node-server` | 很小，路由和 cookie 够用 |
 | WebSocket | `ws` | 事实标准，没有多余抽象（不用 socket.io：它的房间和重连我们要自己按平台语义做） |
 | 数据库 | `node:sqlite`（SQLite 单文件） | 不用原生编译依赖；数据量是几十个用户；备份就是拷一个文件 |
-| 邮件 | 直接 `fetch` 调 Resend，SMTP 兜底 | 和 auto-tiandao-sign 一样，Owner 已有账号 |
+| 邮件 | 直接 `fetch` 调 Resend | 和 auto-tiandao-sign 一样，Owner 已有账号 |
 | 服务端打包 | esbuild 打成单个 `server.mjs` | 容器里不装 `node_modules`，镜像就是官方 node 镜像加一个文件 |
 | 前端 | React 19 + Vite | agent 最熟；游戏画面直接写 React 组件，实时游戏在组件里放 `<canvas>` |
 | 样式 | 原生 CSS + CSS Modules | 不加 Tailwind 之类的构建环节 |

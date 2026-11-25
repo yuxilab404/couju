@@ -39,7 +39,7 @@ web ──▶ platform ──▶ sdk
  └──▶ games/* ──▶ sdk, games/_kit
 ```
 
-`web/` 是入口：登录页、把平台和游戏注册表装起来。**加一个新游戏 = 新建 `games/<id>/` + 在 `web/src/games.ts` 里加一行**，平台和服务端不改。
+`web/` 是入口：只负责把平台外壳（含登录、大厅、房间、资料、管理页面）和游戏注册表装起来。**加一个新游戏 = 新建 `games/<id>/` + 在 `web/src/games.ts` 里加一行**，平台和服务端不改。
 
 ## 3. 游戏接口
 
@@ -74,7 +74,7 @@ interface TurnRules<S, A> {
   active(s: S): Seat[];                          // 现在谁能动；可以多人同时（狼人杀夜里、投票）
   validate(s: S, seat: Seat, a: A): string | null; // null 合法，否则是给人看的原因
   apply(s: S, seat: Seat, a: A, ctx: { rng: Rng }): S;
-  timer?(s: S): { ms: number; seats: Seat[] } | null; // 需要倒计时的局面
+  timer?(s: S): { ms: number; seats: Seat[]; key?: string } | null; // 需要倒计时的局面；同 key 沿用原截止时刻
   onTimeout?(s: S, seat: Seat): A;               // 不提供就让 bot 替这个座位出
 }
 
@@ -149,6 +149,8 @@ bot 的决定回来时局面可能已经变了（比如大模型思考了十秒�
 
 ### 4.4 实时游戏
 
+> 接口已定（`RealtimeGameDef`），房主的实时循环随第一个实时游戏一起实现；在那之前 `canStart()` 会拒绝开实时游戏。
+
 - 房主按 `tickHz` 固定步长调 `step`，输入是每个座位"最后一次上报的按键状态"。
 - 其他玩家只在按键变化时发 `input`；房主每 2–3 个 tick 广播一次视图帧（大约 15–20 帧/秒），客户端在两帧之间插值。插值是游戏画面自己的事，平台提供带时间戳的帧缓冲。
 - 不发房间快照，不做房主交接：实时游戏一局很短，房主掉线就结束这一局回到等人。
@@ -217,7 +219,7 @@ couju/
 ├── games/
 │   ├── _kit/cards/  扑克牌共用：牌面组件、点数排序
 │   └── doudizhu/    规则、视图、bot、画面、测试
-├── web/             入口：登录页、组装平台和游戏注册表（Vite）
+├── web/             入口：挂载平台外壳 + 游戏注册表 games.ts（Vite）
 ├── e2e/             Playwright：多浏览器打一局、交接
 ├── deploy/          Dockerfile、miao 上的部署脚本
 └── docs/adr/        选型记录
@@ -228,7 +230,8 @@ couju/
 - **规则**：每个游戏自己的单测（牌型识别、比大小、结算）。
 - **一致性**：`sdk/testing` 的 `conformance(game)`：用 bot 自己跟自己打几百局，检查不抛错、能结束、确定性（同种子同动作同结果）、不改入参、状态 JSON 往返不变、`view` 结果里不含别的座位的私有信息（游戏提供一个"私有信息探针"）。
 - **平台**：房主循环、托管、交接用假中继做单测。
-- **端到端**：Playwright 起服务端，开三个浏览器上下文，一人建房、两个 bot 补位打完一局；再测房主关页面后另一个人接手。
+- **集成**：`e2e/handover.test.ts` 用真实的服务端 `Rooms` + 平台 `RoomSession` 进程内连线，测建房、开局、换房主、刷新恢复。
+- **端到端**：`npm run e2e`（先 `npm run build`）。Playwright 起打包后的服务端（`COUJU_DEV=1`，验证码从 `/api/dev/last-code` 取，这个接口只在开发模式存在，且开发模式拒绝配 https 地址启动），一人建房、两个 bot 补位打完一局；再测房主关页面后另一个人接手打完。
 
 ## 10. 部署
 

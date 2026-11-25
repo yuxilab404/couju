@@ -1,0 +1,70 @@
+.card {
+  --cw: var(--card-w, clamp(40px, 13vw, 64px));
+  width: var(--cw);
+  height: calc(var(--cw) * 1.45);
+  border-radius: calc(var(--cw) * 0.1);
+  background: #fffdf8;
+  border: 1px solid #b9b2a5;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+  position: relative;
+  box-sizing: border-box;
+  user-select: none;
+  transition: transform 0.12s ease;
+  flex: none;
+}
+.small { --cw: var(--card-w-small, clamp(26px, 8vw, 38px)); }
+.clickable { cursor: pointer; }
+.selected { transform: translateY(-28%); }
+.red { color: #c62828; }
+.black { color: #1d1d1f; }
+.corner {
+  position: absolute;
+  top: 3%;
+  left: 6%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+.rank { font-weight: 700; font-size: calc(var(--cw) * 0.34); letter-spacing: -0.04em; }
+.suit { font-size: calc(var(--cw) * 0.28); }
+.pip {
+  position: absolute;
+  right: 8%;
+  bottom: 6%;
+  font-size: calc(var(--cw) * 0.5);
+  line-height: 1;
+}
+.joker {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  padding: 4% 8%;
+  font-weight: 700;
+  font-size: calc(var(--cw) * 0.26);
+  line-height: 1.05;
+}
+.jokerStar { position: absolute; right: 8%; bottom: 6%; font-size: calc(var(--cw) * 0.45); }
+.back {
+  background: repeating-linear-gradient(45deg, #2f5d8a 0 4px, #3c6fa0 4px 8px);
+  border: 2px solid #fffdf8;
+}
+.hand {
+  --w: var(--card-w, clamp(40px, 13vw, 64px));
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  padding-top: 14px;
+  box-sizing: border-box;
+}
+.handSmall { --w: var(--card-w-small, clamp(26px, 8vw, 38px)); padding-top: 0; }
+.slot { flex: none; }
+.slot + .slot {
+  /* 百分比外边距按容器宽度算：张数多时重叠更多，最多叠到只露 20% */
+  margin-left: max(
+    calc(var(--w) * -0.8),
+    min(calc(var(--w) * -0.35), calc((100% - var(--w)) / (var(--n) - 1) - var(--w)))
+  );
+}

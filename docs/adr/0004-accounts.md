@@ -19,8 +19,8 @@
 | 限频 | 同邮箱重发间隔 60 秒、每日 10 次；同 IP 每日 20 次；全站每日 50 次（保护邮件额度） | 同 |
 | 不在白名单 | 返回和成功完全一样的 `{ok:true}`，不发信（防枚举） | 同 |
 | 发信失败 | 明确报错，不假装成功 | 同 |
-| 会话 | 32 字节随机 token 存库，HttpOnly + SameSite=Lax cookie（HTTPS 下 Secure），30 天 | 同 |
-| 邮件通道 | Resend 优先，SMTP 兜底；都没配时只在 `COUJU_DEV=1` 下把验证码打到日志 | 同 mailer.py |
+| 会话 | 32 字节随机 token，库里只存 SHA-256；HttpOnly + SameSite=Lax cookie（HTTPS 下 Secure），30 天 | 改：库泄露也拿不到可用的会话 |
+| 邮件通道 | Resend；没配时只在 `COUJU_DEV=1` 下把验证码打到日志 | 改：不做 SMTP 兜底（要多一个依赖，Owner 已有 Resend） |
 | 时间 | 库里存 UTC 毫秒时间戳，显示时按北京时间 | 改：避免字符串比较时区 |
 
 ### 准入
