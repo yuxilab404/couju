@@ -106,7 +106,9 @@ echo "$sha" > "$ROOT/deployed"
 
 # 清理：前端保留最近 5 个版本，镜像保留最近 3 个
 current=$(readlink "$ROOT/web/current" | sed 's#releases/##')
-ls -1t "$ROOT/web/releases" | grep -v "^$current$" | tail -n +5 | while read -r d; do rm -rf "$ROOT/web/releases/$d"; done
-docker images couju --format '{{.Tag}} {{.CreatedAt}}' | sort -k2 -r | tail -n +4 | awk '{print $1}' |
-  while read -r t; do docker rmi "couju:$t" >/dev/null 2>&1 || true; done
+# 没有可清理的东西时 grep 返回 1，pipefail 下会让整个脚本失败，所以每条都兜住
+{ ls -1t "$ROOT/web/releases" | grep -v "^$current$" | tail -n +5 || true; } | while read -r d; do rm -rf "$ROOT/web/releases/$d"; done
+in_use=$(docker inspect -f '{{.Config.Image}}' couju 2>/dev/null || true)
+{ docker images couju --format '{{.CreatedAt}}	{{.Repository}}:{{.Tag}}' | sort -r | cut -f2 | grep -v "^$in_use$" | tail -n +3 || true; } |
+  while read -r t; do docker rmi "$t" >/dev/null 2>&1 || true; done
 log "完成：$sha"
