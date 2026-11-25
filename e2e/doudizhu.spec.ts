@@ -67,7 +67,8 @@ test('房主关掉页面，另一个人接手继续打', async ({ browser }) => 
   await friend.goto(url);
   await expect(friend.getByText('等房主开始')).toBeVisible();
   await host.getByRole('button', { name: '开始' }).click();
-  await expect(friend.getByText('农民').or(friend.getByText('叫分')).first()).toBeVisible();
+  // 开局后状态行总会显示"轮到你…"或"等待 某人"
+  await expect(friend.getByText(/轮到你|等待 /).first()).toBeVisible();
 
   await host.close();
   // 15 秒宽限后换房主
