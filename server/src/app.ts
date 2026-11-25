@@ -145,7 +145,8 @@ export function createApp({ cfg, accounts, rooms, devOutbox }: AppDeps) {
     fetch(req: Request): Response | Promise<Response> {
       if (!prefix) return app.fetch(req);
       const url = new URL(req.url);
-      if (url.pathname === prefix) return Response.redirect(`${url.origin}${prefix}/${url.search}`, 308);
+      // 用相对地址跳转：前面是 Caddy，服务端看到的是 http，拼绝对地址会把 https 降成 http
+      if (url.pathname === prefix) return new Response(null, { status: 308, headers: { Location: `${prefix}/${url.search}` } });
       if (url.pathname.startsWith(prefix + '/')) {
         url.pathname = url.pathname.slice(prefix.length);
         return app.fetch(new Request(url, req));
