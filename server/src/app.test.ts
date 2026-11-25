@@ -26,7 +26,7 @@ beforeAll(async () => {
   const rooms = new Rooms();
   const app = createApp({ cfg, accounts, rooms });
   server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }) as Server;
-  attachWebSocket(server, accounts, rooms);
+  accounts.onSessionsRevoked = attachWebSocket(server, accounts, rooms).revalidate;
   await new Promise((r) => server.once('listening', r));
   base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
   adminCookie = await loginCookie('admin@x.com');
@@ -108,6 +108,20 @@ describe('HTTP + WS', () => {
     expect(await add.json()).toEqual({ mailSent: true });
     const friend = await loginCookie(email);
     expect((await fetch(`${base}/api/admin/whitelist`, { headers: { cookie: friend } })).status).toBe(403);
+  });
+
+  it('停用白名单后，在线的 WebSocket 立即被断开', async () => {
+    const email = `ws${Date.now()}@x.com`;
+    await fetch(`${base}/api/admin/whitelist`, {
+      method: 'POST', headers: { cookie: adminCookie, 'content-type': 'application/json' }, body: JSON.stringify({ email }),
+    });
+    const r = await openWs(await loginCookie(email));
+    if (typeof r === 'number') throw new Error(`ws ${r}`);
+    const closed = new Promise<number>((res) => r.ws.on('close', (code) => res(code)));
+    await fetch(`${base}/api/admin/whitelist/${encodeURIComponent(email)}`, {
+      method: 'PATCH', headers: { cookie: adminCookie, 'content-type': 'application/json' }, body: JSON.stringify({ enabled: false }),
+    });
+    expect(await closed).toBe(4401);
   });
 
   it('WebSocket 无 cookie 拒绝；有 cookie 收到 hello，能建房', async () => {

@@ -241,8 +241,6 @@ export class HostEngine {
   dispose(): void {
     this.disposed = true;
     this.stopAll();
-    for (const t of this.offlineTimers.values()) clearTimeout(t);
-    this.offlineTimers.clear();
   }
 
   /** 房主界面读取 */
@@ -365,11 +363,15 @@ export class HostEngine {
       if (!m || immediate) {
         this.hosted.add(seat);
       } else {
+        const round = this.round;
         this.offlineTimers.set(
           slot.userId,
           setTimeout(() => {
             this.offlineTimers.delete(slot.userId);
-            if (this.phase !== 'playing' || this.disposed) return;
+            if (this.phase !== 'playing' || this.disposed || this.round !== round) return;
+            // 这个座位现在还得是同一个人
+            const now = this.seats[seat];
+            if (now?.kind !== 'human' || now.userId !== slot.userId) return;
             if (this.members.get(slot.userId)?.connected) return;
             this.hosted.add(seat);
             this.changed();
@@ -384,7 +386,13 @@ export class HostEngine {
     return this.seats[seat]?.kind === 'bot' || this.hosted.has(seat);
   }
 
+  private clearOfflineTimers(): void {
+    for (const t of this.offlineTimers.values()) clearTimeout(t);
+    this.offlineTimers.clear();
+  }
+
   private stopAll(): void {
+    this.clearOfflineTimers();
     if (this.timer) clearTimeout(this.timer.handle);
     this.timer = null;
     for (const c of this.bots.values()) c.abort();

@@ -144,4 +144,45 @@ describe('房间 + 交接', () => {
     expect(sa2.state.get().game!.seq).toBe(seq);
     expect(sb.state.get().game!.seq).toBe(seq);
   });
+
+  it('房主短暂断线期间推进的局面，重连后补发快照', async () => {
+    const rooms = new Rooms({ hostGraceMs: 15_000 });
+    const a = new Client(rooms, 1), b = new Client(rooms, 2);
+    a.goOnline(); b.goOnline();
+    const sa = new RoomSession(a, 1, [toy], 'v1', null, opts);
+    await tick();
+    const roomId = sa.state.get().roomId!;
+    const sb = new RoomSession(b, 2, [toy], 'v1', roomId, opts);
+    await tick();
+    sa.engine!.start();
+    await tick();
+    if ((sa.state.get().game!.view as { turn: number }).turn !== 0) {
+      sb.act({ add: 1 });
+      await tick();
+    }
+    // 房主断网（没到交接时间），自己在本地出了一步
+    a.goOffline();
+    sa.act({ add: 1 });
+    await tick();
+    const local = sa.state.get().game!.seq;
+    expect(JSON.parse(rooms.checkpointOf(roomId)!).game.seq).toBe(local - 1);
+    a.goOnline();
+    await tick();
+    expect(JSON.parse(rooms.checkpointOf(roomId)!).game.seq).toBe(local);
+  });
+
+  it('重连时房间已经关了：提示房间已关闭，而不是停在旧局面', async () => {
+    const rooms = new Rooms({ hostGraceMs: 15_000, emptyRoomMs: 60_000 });
+    const a = new Client(rooms, 1);
+    a.goOnline();
+    const sa = new RoomSession(a, 1, [toy], 'v1', null, opts);
+    await tick();
+    expect(sa.state.get().status).toBe('in');
+    a.goOffline();
+    await tick(61_000);
+    a.goOnline();
+    await tick();
+    expect(sa.state.get().status).toBe('gone');
+    expect(sa.state.get().goneReason).toContain('不存在');
+  });
 });
