@@ -1,0 +1,590 @@
+/**
+ * 房主权威循环（ARCHITECTURE.md §4.3）：只在当前房主的浏览器里存在。
+ * 持有房间配置、座位、游戏状态与随机数；按视角下发、调度 bot 与计时、写快照。
+ * 不认识任何游戏的规则，只通过 GameDef 接口调用。
+ */
+import { SeededRng, defaultOptions, type AnyGameDef, type Result, type Seat, type TurnGameDef } from '@couju/sdk';
+import { deepFreeze } from '@couju/sdk/testing.ts';
+import type { Member, UserId } from '@couju/protocol';
+import {
+  scoreKey,
+  type Checkpoint,
+  type GameEnvelope,
+  type GamePublic,
+  type LobbyMeta,
+  type RoomConfig,
+  type RoomPhase,
+  type RoomPublic,
+  type SeatSlot,
+  type ToHost,
+  type ToMember,
+} from './wire.ts';
+import { findGame, type GameRegistry } from './registry.ts';
+
+export interface HostIO {
+  myId: UserId;
+  buildId: string;
+  /** 发给其他成员（经中继） */
+  sendTo(userId: UserId, msg: ToMember): void;
+  /** 发给房主自己的客户端（本地） */
+  deliverLocal(msg: ToMember): void;
+  setMeta(meta: LobbyMeta): void;
+  setCheckpoint(data: string): void;
+  notice?(msg: string): void;
+}
+
+export interface HostOptions {
+  /** bot 出手前的"思考"延迟 */
+  botDelayMs?: [number, number];
+  /** 真人掉线多久后由 bot 托管 */
+  hostedAfterMs?: number;
+  random?: () => number;
+  freeze?: boolean;
+}
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TurnGame = TurnGameDef<any, any, any, any>;
+
+interface LiveGame {
+  def: TurnGame;
+  env: GameEnvelope;
+  rng: SeededRng;
+  result: Result | null;
+}
+
+interface TimerState {
+  handle: ReturnType<typeof setTimeout>;
+  seq: number;
+  key: string | undefined;
+  seats: Seat[];
+  deadline: number;
+}
+
+export class HostEngine {
+  private config: RoomConfig;
+  private seats: SeatSlot[];
+  private phase: RoomPhase = 'waiting';
+  private scoreboard: Record<string, number> = {};
+  private round = 0;
+  private game: LiveGame | null = null;
+  private hosted = new Set<Seat>();
+  private members = new Map<UserId, Member>();
+  private offlineTimers = new Map<UserId, ReturnType<typeof setTimeout>>();
+  private timer: TimerState | null = null;
+  private bots = new Map<Seat, AbortController>();
+  private dirty = false;
+  private disposed = false;
+  private readonly botDelay: [number, number];
+  private readonly hostedAfterMs: number;
+  private readonly random: () => number;
+  private readonly freeze: boolean;
+
+  constructor(
+    private registry: GameRegistry,
+    private io: HostIO,
+    members: Member[],
+    checkpoint: Checkpoint | null,
+    opts: HostOptions = {},
+  ) {
+    this.botDelay = opts.botDelayMs ?? [500, 1100];
+    this.hostedAfterMs = opts.hostedAfterMs ?? 30_000;
+    this.random = opts.random ?? Math.random;
+    this.freeze = opts.freeze ?? false;
+    for (const m of members) this.members.set(m.id, m);
+
+    const first = registry[0];
+    this.config = { gameId: first.id, options: defaultOptions(first) };
+    this.seats = Array.from({ length: first.players.min }, () => ({ kind: 'empty' }) as SeatSlot);
+    if (checkpoint) this.restore(checkpoint);
+    else {
+      this.autoSeat(io.myId);
+      for (const m of [...members].sort((a, b) => a.joinedAt - b.joinedAt)) this.autoSeat(m.id);
+    }
+    this.syncHosted(true);
+    this.changed();
+    this.schedule();
+  }
+
+  // ---------------- 外部事件 ----------------
+
+  membersChanged(members: Member[]): void {
+    if (this.disposed) return;
+    const before = this.members;
+    this.members = new Map(members.map((m) => [m.id, m]));
+    if (this.phase === 'waiting') {
+      // 离开房间的人让出座位
+      this.seats = this.seats.map((s) => (s.kind === 'human' && !this.members.has(s.userId) ? { kind: 'empty' } : s));
+      for (const m of members) if (!before.has(m.id)) this.autoSeat(m.id);
+    }
+    this.syncHosted(false);
+    this.changed();
+    this.schedule();
+  }
+
+  onRelay(from: UserId, data: unknown): void {
+    if (this.disposed || !data || typeof data !== 'object') return;
+    const msg = data as ToHost;
+    switch (msg.k) {
+      case 'hello':
+        this.sendSync(from);
+        return;
+      case 'sit':
+        return this.sit(from, msg.seat);
+      case 'act':
+        return this.act(from, msg.seq, msg.action);
+    }
+  }
+
+  // ---------------- 房主操作（房主界面直接调用） ----------------
+
+  selectGame(gameId: string): void {
+    if (this.phase !== 'waiting') return;
+    const def = findGame(this.registry, gameId);
+    if (!def) return;
+    this.config = { gameId, options: defaultOptions(def) };
+    this.resizeSeats(clamp(this.seats.length, def.players.min, def.players.max));
+    this.changed();
+  }
+
+  setOption(key: string, value: unknown): void {
+    if (this.phase !== 'waiting') return;
+    this.config = { ...this.config, options: { ...this.config.options, [key]: value } };
+    this.changed();
+  }
+
+  setSeatCount(n: number): void {
+    if (this.phase !== 'waiting') return;
+    const def = this.currentDef();
+    this.resizeSeats(clamp(n, def.players.min, def.players.max));
+    this.changed();
+  }
+
+  /** 设为空位 / bot / 把人请下座 */
+  setSlot(seat: Seat, slot: SeatSlot): void {
+    if (this.phase !== 'waiting' || seat < 0 || seat >= this.seats.length) return;
+    if (slot.kind === 'human') {
+      this.seats = this.seats.map((s) => (s.kind === 'human' && s.userId === slot.userId ? { kind: 'empty' } : s));
+    }
+    this.seats[seat] = slot;
+    this.seats = [...this.seats];
+    this.changed();
+  }
+
+  swapSeats(a: Seat, b: Seat): void {
+    if (this.phase !== 'waiting') return;
+    const s = [...this.seats];
+    [s[a], s[b]] = [s[b], s[a]];
+    this.seats = s;
+    this.changed();
+  }
+
+  canStart(): string | null {
+    if (this.phase !== 'waiting') return '已经开始了';
+    const def = this.currentDef();
+    if (def.mode !== 'turn') return '实时游戏的房主循环还没有实现';
+    if (!this.seats.some((s) => s.kind === 'human')) return '至少要有一个真人';
+    if (this.seats.length < def.players.min || this.seats.length > def.players.max) return '人数不对';
+    return null;
+  }
+
+  start(): void {
+    if (this.canStart() !== null) return;
+    const def = this.currentDef() as TurnGame;
+    // 空座按 bot 补满
+    this.seats = this.seats.map((s) => (s.kind === 'empty' ? { kind: 'bot' } : s));
+    const seed = Math.floor(this.random() * 2 ** 32);
+    const rng = SeededRng.fromSeed(seed);
+    const numPlayers = this.seats.length;
+    const options = { ...defaultOptions(def), ...this.config.options };
+    const state = def.setup({ numPlayers, options, rng });
+    this.game = {
+      def,
+      rng,
+      result: null,
+      env: {
+        gameId: def.id,
+        gameVersion: def.version,
+        numPlayers,
+        options,
+        state: this.maybeFreeze(state),
+        rng: rng.state(),
+        seq: 0,
+        seatKeys: this.seats.map(scoreKey),
+      },
+    };
+    this.game.result = def.result(state);
+    this.phase = 'playing';
+    this.round++;
+    this.syncHosted(true);
+    this.changed();
+    this.schedule();
+  }
+
+  /** 结算后同座位再来一局 */
+  rematch(): void {
+    if (this.phase !== 'ended') return;
+    this.phase = 'waiting';
+    this.game = null;
+    this.start();
+  }
+
+  backToRoom(): void {
+    this.stopAll();
+    this.phase = 'waiting';
+    this.game = null;
+    this.hosted.clear();
+    // 不在线的人让出座位，bot 留着
+    this.seats = this.seats.map((s) => (s.kind === 'human' && !this.members.get(s.userId)?.connected ? { kind: 'empty' } : s));
+    this.changed();
+  }
+
+  dispose(): void {
+    this.disposed = true;
+    this.stopAll();
+    for (const t of this.offlineTimers.values()) clearTimeout(t);
+    this.offlineTimers.clear();
+  }
+
+  /** 房主界面读取 */
+  snapshot(): { config: RoomConfig; seats: SeatSlot[]; phase: RoomPhase } {
+    return { config: this.config, seats: this.seats, phase: this.phase };
+  }
+
+  // ---------------- 内部 ----------------
+
+  private currentDef(): AnyGameDef {
+    return findGame(this.registry, this.config.gameId) ?? this.registry[0];
+  }
+
+  private resizeSeats(n: number): void {
+    const s = this.seats.slice(0, n);
+    while (s.length < n) s.push({ kind: 'empty' });
+    this.seats = s;
+    // 座位多出来了：还站着的人按入房顺序坐下
+    const standing = [...this.members.values()].filter((m) => m.connected).sort((a, b) => a.joinedAt - b.joinedAt);
+    for (const m of standing) this.autoSeat(m.id);
+  }
+
+  private autoSeat(userId: UserId): void {
+    if (this.phase !== 'waiting') return;
+    if (this.seats.some((s) => s.kind === 'human' && s.userId === userId)) return;
+    const i = this.seats.findIndex((s) => s.kind === 'empty');
+    if (i >= 0) this.seats[i] = { kind: 'human', userId };
+  }
+
+  private seatOf(userId: UserId): Seat | null {
+    const i = this.seats.findIndex((s) => s.kind === 'human' && s.userId === userId);
+    return i >= 0 ? i : null;
+  }
+
+  private sit(from: UserId, seat: Seat | null): void {
+    if (this.phase !== 'waiting') return this.sendSync(from);
+    if (seat === null) {
+      this.seats = this.seats.map((s) => (s.kind === 'human' && s.userId === from ? { kind: 'empty' } : s));
+    } else if (seat >= 0 && seat < this.seats.length && this.seats[seat].kind === 'empty') {
+      this.seats = this.seats.map((s) => (s.kind === 'human' && s.userId === from ? { kind: 'empty' } : s));
+      this.seats[seat] = { kind: 'human', userId: from };
+    }
+    this.changed();
+  }
+
+  private act(from: UserId, seq: number, action: unknown): void {
+    const reject = (reason: string) => this.send(from, { k: 'reject', seq, reason });
+    const g = this.game;
+    if (this.phase !== 'playing' || !g) return reject('现在不能操作');
+    const seat = this.seatOf(from);
+    if (seat === null) return reject('你没有坐在这一局里');
+    if (this.hosted.has(seat)) {
+      // 人回来了，托管结束
+      this.hosted.delete(seat);
+      this.bots.get(seat)?.abort();
+      this.bots.delete(seat);
+    }
+    const err = this.tryApply(seat, action);
+    if (err) reject(err);
+  }
+
+  /** 返回 null 表示已应用 */
+  private tryApply(seat: Seat, action: unknown): string | null {
+    const g = this.game!;
+    const s = g.env.state;
+    try {
+      if (!g.def.turn.active(s).includes(seat)) return '还没轮到你';
+      const reason = g.def.turn.validate(s, seat, action);
+      if (reason !== null) return reason;
+      const next = g.def.turn.apply(s, seat, action, { rng: g.rng });
+      g.env = { ...g.env, state: this.maybeFreeze(next), rng: g.rng.state(), seq: g.env.seq + 1 };
+    } catch (e) {
+      // 游戏代码出错：状态不变，随机数回到动作前
+      g.rng = new SeededRng(g.env.rng);
+      this.io.notice?.(`游戏出错：${(e as Error).message}`);
+      return '操作格式不正确';
+    }
+    g.result = g.def.result(g.env.state);
+    if (g.result) this.finish(g.result);
+    this.changed();
+    this.schedule();
+    return null;
+  }
+
+  private finish(result: Result): void {
+    this.phase = 'ended';
+    const keys = this.game!.env.seatKeys;
+    result.scores?.forEach((d, seat) => {
+      const k = keys[seat];
+      this.scoreboard = { ...this.scoreboard, [k]: (this.scoreboard[k] ?? 0) + d };
+    });
+    this.stopAll();
+  }
+
+  private maybeFreeze<T>(s: T): T {
+    return this.freeze ? deepFreeze(s) : s;
+  }
+
+  /** 根据成员在线情况更新托管座位 */
+  private syncHosted(immediate: boolean): void {
+    if (this.phase !== 'playing') {
+      this.hosted.clear();
+      return;
+    }
+    this.seats.forEach((slot, seat) => {
+      if (slot.kind !== 'human') return;
+      const m = this.members.get(slot.userId);
+      const pending = this.offlineTimers.get(slot.userId);
+      if (m?.connected) {
+        if (pending) clearTimeout(pending);
+        this.offlineTimers.delete(slot.userId);
+        if (this.hosted.delete(seat)) {
+          this.bots.get(seat)?.abort();
+          this.bots.delete(seat);
+        }
+        return;
+      }
+      if (this.hosted.has(seat) || pending) return;
+      // 不在房间里（主动离开）或刚恢复的快照：立即托管；掉线：给宽限
+      if (!m || immediate) {
+        this.hosted.add(seat);
+      } else {
+        this.offlineTimers.set(
+          slot.userId,
+          setTimeout(() => {
+            this.offlineTimers.delete(slot.userId);
+            if (this.phase !== 'playing' || this.disposed) return;
+            if (this.members.get(slot.userId)?.connected) return;
+            this.hosted.add(seat);
+            this.changed();
+            this.schedule();
+          }, this.hostedAfterMs),
+        );
+      }
+    });
+  }
+
+  private botControlled(seat: Seat): boolean {
+    return this.seats[seat]?.kind === 'bot' || this.hosted.has(seat);
+  }
+
+  private stopAll(): void {
+    if (this.timer) clearTimeout(this.timer.handle);
+    this.timer = null;
+    for (const c of this.bots.values()) c.abort();
+    this.bots.clear();
+  }
+
+  /** 状态或座位控制变化后：安排 bot 与倒计时 */
+  private schedule(): void {
+    const g = this.game;
+    if (this.disposed || this.phase !== 'playing' || !g) return;
+    const s = g.env.state;
+    const active = g.def.turn.active(s);
+
+    for (const seat of active) if (this.botControlled(seat) && !this.bots.has(seat)) this.runBot(seat, 0);
+
+    const t = g.def.turn.timer?.(s) ?? null;
+    // 同一个状态（只是座位控制或成员变了）不重新计时；给了相同 key 也沿用
+    const sameTimer =
+      t && this.timer && (this.timer.seq === g.env.seq || (t.key !== undefined && t.key === this.timer.key));
+    if (!sameTimer) {
+      if (this.timer) clearTimeout(this.timer.handle);
+      this.timer = null;
+      if (t) {
+        const seq = g.env.seq;
+        this.timer = {
+          seq,
+          key: t.key,
+          seats: t.seats,
+          deadline: Date.now() + t.ms,
+          handle: setTimeout(() => this.onTimeout(), t.ms),
+        };
+      }
+    }
+  }
+
+  private onTimeout(): void {
+    const g = this.game;
+    const t = this.timer;
+    this.timer = null;
+    if (!g || !t || this.phase !== 'playing') return;
+    const active = g.def.turn.active(g.env.state);
+    for (const seat of t.seats) {
+      if (!active.includes(seat)) continue;
+      if (g.def.turn.onTimeout) {
+        const err = this.tryApply(seat, g.def.turn.onTimeout(g.env.state, seat));
+        if (err) this.io.notice?.(`超时默认动作不合法：${err}`);
+      } else if (!this.bots.has(seat)) {
+        this.runBot(seat, 0, true);
+      }
+    }
+  }
+
+  private runBot(seat: Seat, attempt: number, immediate = false): void {
+    const g = this.game!;
+    const ctl = new AbortController();
+    this.bots.set(seat, ctl);
+    const [lo, hi] = this.botDelay;
+    const delay = immediate ? 0 : lo + this.random() * (hi - lo);
+    const view = JSON.parse(JSON.stringify(g.def.view(g.env.state, seat)));
+    const rng = SeededRng.fromSeed(Math.floor(this.random() * 2 ** 32));
+
+    const done = () => {
+      if (this.bots.get(seat) === ctl) this.bots.delete(seat);
+    };
+    setTimeout(async () => {
+      if (ctl.signal.aborted) return done();
+      let action: unknown;
+      try {
+        action = await g.def.bot.decide(view, { seat, rng, signal: ctl.signal });
+      } catch (e) {
+        this.io.notice?.(`bot 出错：${(e as Error).message}`);
+        return done();
+      }
+      if (ctl.signal.aborted || this.game !== g || this.phase !== 'playing') return done();
+      done();
+      if (!g.def.turn.active(g.env.state).includes(seat)) return;
+      // 真人回来了就不替他出
+      if (!this.botControlled(seat) && !immediate) return;
+      const err = this.tryApply(seat, action);
+      if (err) {
+        // 局面在 bot 思考期间变了：重新问一次
+        if (attempt < 2) this.runBot(seat, attempt + 1, true);
+        else this.io.notice?.(`bot 连续出了不合法的动作：${err}`);
+      }
+    }, delay);
+  }
+
+  // ---------------- 下发 ----------------
+
+  private changed(): void {
+    if (this.dirty || this.disposed) return;
+    this.dirty = true;
+    queueMicrotask(() => {
+      this.dirty = false;
+      if (this.disposed) return;
+      this.broadcast();
+      this.io.setCheckpoint(JSON.stringify(this.checkpoint()));
+      this.io.setMeta(this.meta());
+    });
+  }
+
+  private roomPublic(): RoomPublic {
+    return {
+      config: this.config,
+      seats: this.seats,
+      hosted: [...this.hosted],
+      phase: this.phase,
+      scoreboard: this.scoreboard,
+      round: this.round,
+      buildId: this.io.buildId,
+    };
+  }
+
+  private gamePublic(seat: Seat | null, shared?: unknown): GamePublic | null {
+    const g = this.game;
+    if (!g) return null;
+    const t = this.timer;
+    return {
+      seat,
+      view: shared !== undefined ? shared : g.def.view(g.env.state, seat),
+      seq: g.env.seq,
+      timer: t ? { seats: t.seats, remainingMs: Math.max(0, t.deadline - Date.now()) } : null,
+      result: g.result,
+    };
+  }
+
+  private broadcast(): void {
+    const room = this.roomPublic();
+    const g = this.game;
+    const shared = g?.def.publicView ? g.def.view(g.env.state, null) : undefined;
+    const ids = new Set<UserId>([this.io.myId]);
+    for (const m of this.members.values()) if (m.connected) ids.add(m.id);
+    for (const id of ids) {
+      this.send(id, { k: 'sync', room, game: this.gamePublic(this.seatOf(id), shared) });
+    }
+  }
+
+  private sendSync(userId: UserId): void {
+    this.send(userId, { k: 'sync', room: this.roomPublic(), game: this.gamePublic(this.seatOf(userId)) });
+  }
+
+  private send(userId: UserId, msg: ToMember): void {
+    if (userId === this.io.myId) this.io.deliverLocal(msg);
+    else this.io.sendTo(userId, msg);
+  }
+
+  private meta(): LobbyMeta {
+    const def = this.currentDef();
+    return {
+      gameId: def.id,
+      gameName: def.name,
+      seats: this.seats.length,
+      humans: this.seats.filter((s) => s.kind === 'human').length,
+      phase: this.phase,
+    };
+  }
+
+  private checkpoint(): Checkpoint {
+    return {
+      v: 1,
+      buildId: this.io.buildId,
+      config: this.config,
+      seats: this.seats,
+      phase: this.phase,
+      scoreboard: this.scoreboard,
+      round: this.round,
+      game: this.game ? this.game.env : null,
+    };
+  }
+
+  private restore(cp: Checkpoint): void {
+    const def = findGame(this.registry, cp.config.gameId);
+    if (!def) {
+      this.io.notice?.('房间里的游戏在你的版本里不存在，请刷新页面');
+      return;
+    }
+    this.config = cp.config;
+    this.seats = cp.seats;
+    this.scoreboard = cp.scoreboard;
+    this.round = cp.round;
+    this.phase = cp.phase === 'ended' ? 'ended' : cp.phase;
+    if (cp.game && cp.phase !== 'waiting') {
+      if (cp.game.gameVersion !== def.version || def.mode !== 'turn') {
+        this.io.notice?.('你的游戏版本和这局不一致，请刷新页面；这一局已回到等人');
+        this.phase = 'waiting';
+        return;
+      }
+      const turnDef = def as TurnGame;
+      this.game = {
+        def: turnDef,
+        env: { ...cp.game, state: this.maybeFreeze(cp.game.state) },
+        rng: new SeededRng(cp.game.rng),
+        result: turnDef.result(cp.game.state),
+      };
+    } else {
+      this.phase = 'waiting';
+    }
+  }
+}
+
+function clamp(n: number, lo: number, hi: number): number {
+  return Math.max(lo, Math.min(hi, n));
+}

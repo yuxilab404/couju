@@ -1,0 +1,9 @@
+[Unit]
+Description=凑局：检查并部署新版本
+After=docker.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=ubuntu
+ExecStart=/usr/local/bin/couju-poll

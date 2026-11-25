@@ -1,0 +1,234 @@
+/** 斗地主牌桌画面 */
+import { CardBack, Hand } from '@couju/kit-cards';
+import type { Seat, SeatInfo, TurnUIProps } from '@couju/sdk';
+import { useEffect, useMemo, useState } from 'react';
+import { hints } from './bot.ts';
+import { faceOf, sortCards } from './cards.ts';
+import type { Action, Recent, View } from './rules.ts';
+import styles from './ui.module.css';
+
+function useNow(active: boolean): number {
+  const [now, setNow] = useState(() => Date.now());
+  useEffect(() => {
+    if (!active) return;
+    const t = setInterval(() => setNow(Date.now()), 250);
+    return () => clearInterval(t);
+  }, [active]);
+  return now;
+}
+
+const COLORS = ['#e57373', '#64b5f6', '#81c784', '#ffb74d', '#ba68c8', '#4db6ac', '#f06292', '#7986cb'];
+function colorOf(name: string): string {
+  let h = 0;
+  for (const ch of name) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return COLORS[h % COLORS.length];
+}
+
+function Avatar({ info }: { info: SeatInfo | undefined }) {
+  const name = info?.name ?? '?';
+  if (info?.avatarUrl) return <img className={styles.avatar} src={info.avatarUrl} alt={name} />;
+  return (
+    <div className={styles.avatar} style={{ background: colorOf(name) }}>
+      {[...name][0]}
+    </div>
+  );
+}
+
+function bidText(v: View, seat: Seat): string | null {
+  const b = v.bids.find((x) => x.seat === seat);
+  if (!b) return null;
+  return b.score === 0 ? '不叫' : `${b.score} 分`;
+}
+
+function RecentPlay({ recent }: { recent: Recent }) {
+  if (recent === 'pass') return <div className={styles.pass}>不要</div>;
+  if (!recent) return null;
+  return <Hand small cards={sortCards(recent).map(faceOf)} />;
+}
+
+function SeatPanel(props: {
+  v: View;
+  seat: Seat;
+  info: SeatInfo | undefined;
+  secondsLeft: number | null;
+  side: 'left' | 'right';
+}) {
+  const { v, seat, info, secondsLeft, side } = props;
+  const isTurn = v.phase !== 'ended' && v.turn === seat;
+  const bid = v.phase === 'bidding' ? bidText(v, seat) : null;
+  return (
+    <div className={[styles.seat, styles[side], isTurn ? styles.turn : ''].join(' ')} data-seat={seat}>
+      <div className={styles.who}>
+        <Avatar info={info} />
+        <div className={styles.meta}>
+          <div className={styles.name}>
+            {info?.name ?? `座位 ${seat + 1}`}
+            {v.landlord !== null && (
+              <span className={v.landlord === seat ? styles.badgeLord : styles.badgeFarmer}>
+                {v.landlord === seat ? '地主' : '农民'}
+              </span>
+            )}
+          </div>
+          <div className={styles.tags}>
+            <span className={styles.count} title="剩余张数">
+              <span className={styles.miniBack} />
+              {v.counts[seat]}
+            </span>
+            {isTurn && secondsLeft !== null && <span className={styles.clock}>{secondsLeft}</span>}
+            {info?.kind === 'bot' && <span className={styles.tag}>电脑</span>}
+            {info?.hosted && <span className={styles.tag}>托管中</span>}
+            {info && !info.connected && info.kind === 'human' && <span className={styles.tag}>掉线</span>}
+          </div>
+        </div>
+      </div>
+      <div className={styles.played}>
+        {bid ? <div className={styles.pass}>{bid}</div> : <RecentPlay recent={v.recent[seat]} />}
+      </div>
+    </div>
+  );
+}
+
+export function Board(props: TurnUIProps<View, Action>) {
+  const { view: v, seat, seats, act, pending, error, timer, result } = props;
+  const me: Seat = seat ?? 0;
+  const right = (me + 1) % 3;
+  const left = (me + 2) % 3;
+  const info = (s: Seat) => seats.find((x) => x.seat === s);
+  const now = useNow(timer !== null);
+  const secondsLeft = timer ? Math.max(0, Math.ceil((timer.deadline - now) / 1000)) : null;
+  const myTurn = seat !== null && v.phase !== 'ended' && v.turn === seat;
+  const canAct = myTurn && !pending;
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [hintIdx, setHintIdx] = useState(0);
+  const handKey = v.hand.join();
+  const trickKey = `${v.turn}|${v.history.length}|${v.phase}`;
+  useEffect(() => setSelected(new Set()), [handKey]);
+  useEffect(() => setHintIdx(0), [trickKey]);
+  const hintList = useMemo(() => (myTurn ? hints(v) : []), [myTurn, trickKey, handKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const toggle = (id: string) => {
+    if (seat === null) return;
+    const next = new Set(selected);
+    if (next.has(id)) next.delete(id);
+    else next.add(id);
+    setSelected(next);
+  };
+  const play = () => act({ type: 'play', cards: v.hand.filter((c) => selected.has(c)) });
+  const hint = () => {
+    if (hintList.length === 0) return;
+    setSelected(new Set(hintList[hintIdx % hintList.length]));
+    setHintIdx(hintIdx + 1);
+  };
+
+  const status = (() => {
+    if (v.phase === 'ended') return null;
+    const who = v.turn === seat ? '轮到你' : `等待 ${info(v.turn)?.name ?? `座位 ${v.turn + 1}`}`;
+    const what = v.phase === 'bidding' ? '叫分' : v.lastPlay ? '跟牌' : '出牌';
+    return `${who}${v.turn === seat ? what : ''}${secondsLeft !== null ? ` · ${secondsLeft} 秒` : ''}`;
+  })();
+
+  return (
+    <div className={styles.table}>
+      <div className={styles.top}>
+        <div className={styles.bottomCards}>
+          {v.bottom ? (
+            <Hand small cards={v.bottom.map(faceOf)} />
+          ) : (
+            <div className={styles.backs}>
+              <CardBack small />
+              <CardBack small />
+              <CardBack small />
+            </div>
+          )}
+        </div>
+        <div className={styles.info}>
+          <span>{v.phase === 'bidding' ? `当前 ${v.maxBid || '无人叫'}${v.maxBid ? ' 分' : ''}` : `底分 ${v.baseScore}`}</span>
+          <span>倍数 ×{v.multiplier}</span>
+          {v.redeals > 0 && v.phase === 'bidding' && <span>第 {v.redeals + 1} 次发牌</span>}
+        </div>
+      </div>
+
+      <div className={styles.opponents}>
+        <SeatPanel v={v} seat={left} info={info(left)} secondsLeft={secondsLeft} side="left" />
+        <SeatPanel v={v} seat={right} info={info(right)} secondsLeft={secondsLeft} side="right" />
+      </div>
+
+      <div className={styles.mine}>
+        <div className={styles.myPlayed}>
+          {v.phase === 'bidding' ? (
+            bidText(v, me) && <div className={styles.pass}>{bidText(v, me)}</div>
+          ) : (
+            <RecentPlay recent={v.recent[me]} />
+          )}
+        </div>
+
+        {result && (
+          <div className={styles.result} role="status">
+            <div className={styles.resultTitle}>
+              {seat !== null && result.winners.includes(seat) ? '你赢了' : seat !== null ? '你输了' : '本局结束'}
+            </div>
+            <div>{result.summary}</div>
+            {v.revealed &&
+              [left, right].filter((x) => v.revealed![x].length > 0).map((x) => (
+                <div key={x} className={styles.revealed}>
+                  <span>{info(x)?.name ?? `座位 ${x + 1}`} 剩</span>
+                  <Hand small cards={v.revealed![x].map(faceOf)} />
+                </div>
+              ))}
+          </div>
+        )}
+
+        <div className={styles.status} aria-live="polite">
+          {status && <span className={myTurn ? styles.myTurn : ''}>{status}</span>}
+          {error && <span className={styles.error}>{error}</span>}
+        </div>
+
+        {canAct && v.phase === 'bidding' && (
+          <div className={styles.actions}>
+            <button onClick={() => act({ type: 'bid', score: 0 })}>不叫</button>
+            {([1, 2, 3] as const).map((n) => (
+              <button key={n} className={styles.primary} disabled={n <= v.maxBid} onClick={() => act({ type: 'bid', score: n })}>
+                {n} 分
+              </button>
+            ))}
+          </div>
+        )}
+        {canAct && v.phase === 'playing' && (
+          <div className={styles.actions}>
+            <button disabled={!v.lastPlay} onClick={() => act({ type: 'pass' })}>
+              不要
+            </button>
+            <button onClick={hint} disabled={hintList.length === 0}>
+              提示
+            </button>
+            <button className={styles.primary} disabled={selected.size === 0} onClick={play}>
+              出牌
+            </button>
+          </div>
+        )}
+
+        <div className={[styles.myHand, myTurn ? styles.turnGlow : ''].join(' ')}>
+          {seat !== null ? (
+            <>
+              <div className={styles.myTag}>
+                <Avatar info={info(seat)} />
+                <span>{info(seat)?.name ?? '我'}</span>
+                {v.landlord !== null && (
+                  <span className={v.landlord === seat ? styles.badgeLord : styles.badgeFarmer}>
+                    {v.landlord === seat ? '地主' : '农民'}
+                  </span>
+                )}
+                <span className={styles.dim}>{v.hand.length} 张</span>
+              </div>
+              <Hand cards={v.hand.map(faceOf)} selected={selected} onToggle={toggle} />
+            </>
+          ) : (
+            <div className={styles.dim}>旁观中 · 座位 1 剩 {v.counts[0]} 张</div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+

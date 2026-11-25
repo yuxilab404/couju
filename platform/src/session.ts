@@ -1,0 +1,231 @@
+/**
+ * 一个房间的客户端会话：所有人（含房主）都通过它看房间、发操作。
+ * 自己是房主时，在这里创建/销毁 HostEngine，并把中继消息接到它上面。
+ */
+import type { ClientMsg, Member, ServerMsg, UserId } from '@couju/protocol';
+import type { Result, Seat } from '@couju/sdk';
+import { HostEngine, type HostOptions } from './host.ts';
+import type { GameRegistry } from './registry.ts';
+import { Store } from './store.ts';
+import type { Checkpoint, RoomPublic, ToHost, ToMember } from './wire.ts';
+
+export interface Link {
+  send(msg: ClientMsg): boolean;
+  onMessage(fn: (m: ServerMsg) => void): () => void;
+  onOpen(fn: () => void): () => void;
+}
+
+export interface GameState {
+  seat: Seat | null;
+  view: unknown;
+  seq: number;
+  timer: { seats: Seat[]; deadline: number } | null;
+  result: Result | null;
+}
+
+export interface RoomState {
+  status: 'joining' | 'in' | 'gone';
+  goneReason: string | null;
+  roomId: string | null;
+  hostId: UserId | null;
+  members: Member[];
+  amHost: boolean;
+  room: RoomPublic | null;
+  game: GameState | null;
+  pending: boolean;
+  error: string | null;
+  notice: string | null;
+}
+
+const KNOWN_TO_HOST = new Set(['hello', 'sit', 'act']);
+const KNOWN_TO_MEMBER = new Set(['sync', 'reject']);
+
+export class RoomSession {
+  readonly state: Store<RoomState>;
+  engine: HostEngine | null = null;
+  private seq = 0;
+  private unsubs: (() => void)[] = [];
+  private lastCheckpoint = '';
+  private lastMeta = '';
+  private disposed = false;
+
+  constructor(
+    private link: Link,
+    private myId: UserId,
+    private registry: GameRegistry,
+    private buildId: string,
+    /** null = 新建房间 */
+    roomId: string | null,
+    private hostOpts: HostOptions = {},
+  ) {
+    this.state = new Store<RoomState>({
+      status: 'joining', goneReason: null, roomId, hostId: null, members: [], amHost: false,
+      room: null, game: null, pending: false, error: null, notice: null,
+    });
+    this.unsubs.push(link.onMessage((m) => this.onServer(m)));
+    this.unsubs.push(link.onOpen(() => this.enter()));
+  }
+
+  // ---------- 操作 ----------
+
+  act(action: unknown): void {
+    const seq = ++this.seq;
+    this.state.set({ pending: true, error: null });
+    this.toHost({ k: 'act', seq, action });
+  }
+
+  sit(seat: Seat | null): void {
+    this.toHost({ k: 'sit', seat });
+  }
+
+  leave(): void {
+    this.link.send({ t: 'room.leave' });
+    this.dispose();
+  }
+
+  dispose(): void {
+    if (this.disposed) return;
+    this.disposed = true;
+    for (const u of this.unsubs) u();
+    this.engine?.dispose();
+    this.engine = null;
+  }
+
+  // ---------- 内部 ----------
+
+  private enter(): void {
+    if (this.disposed) return;
+    const { roomId } = this.state.get();
+    if (roomId) this.link.send({ t: 'room.join', roomId });
+    else this.link.send({ t: 'room.create', meta: null });
+  }
+
+  private toHost(msg: ToHost): void {
+    const { hostId } = this.state.get();
+    if (this.engine) this.engine.onRelay(this.myId, msg);
+    else if (hostId !== null) this.link.send({ t: 'relay', to: 'host', data: msg });
+  }
+
+  private onServer(m: ServerMsg): void {
+    if (this.disposed) return;
+    const st = this.state.get();
+    switch (m.t) {
+      case 'room.state': {
+        if (st.roomId && m.roomId !== st.roomId) return;
+        const hostChanged = m.hostId !== st.hostId;
+        this.state.set({ status: 'in', roomId: m.roomId, hostId: m.hostId, members: m.members, amHost: m.hostId === this.myId });
+        if (m.hostId !== this.myId && this.engine) this.dropEngine();
+        this.engine?.membersChanged(m.members);
+        if (hostChanged && m.hostId !== this.myId) this.link.send({ t: 'relay', to: 'host', data: { k: 'hello' } });
+        return;
+      }
+      case 'room.host': {
+        if (m.roomId !== this.state.get().roomId) return;
+        this.state.set({ hostId: m.hostId, amHost: m.hostId === this.myId });
+        if (m.hostId === this.myId) {
+          if (!this.engine) this.becomeHost(m.checkpoint ?? null);
+        } else {
+          this.dropEngine();
+          this.link.send({ t: 'relay', to: 'host', data: { k: 'hello' } });
+        }
+        return;
+      }
+      case 'room.left':
+        if (m.roomId !== st.roomId) return;
+        this.state.set({
+          status: 'gone',
+          goneReason: m.reason === 'replaced' ? '你在别的页面进了这个房间' : m.reason === 'closed' ? '房间已关闭' : null,
+        });
+        this.dispose();
+        return;
+      case 'error':
+        if (m.code === 'not_found' && st.status === 'joining') {
+          this.state.set({ status: 'gone', goneReason: m.message });
+          this.dispose();
+        }
+        return;
+      case 'relay':
+        return this.onRelay(m.from, m.data);
+    }
+  }
+
+  private onRelay(from: UserId, data: unknown): void {
+    if (!data || typeof data !== 'object') return;
+    const k = (data as { k?: unknown }).k;
+    if (typeof k !== 'string') return;
+    if (KNOWN_TO_HOST.has(k)) {
+      this.engine?.onRelay(from, data);
+    } else if (KNOWN_TO_MEMBER.has(k) && from === this.state.get().hostId) {
+      this.onHostMsg(data as ToMember);
+    }
+  }
+
+  private onHostMsg(msg: ToMember): void {
+    if (msg.k === 'reject') {
+      this.state.set({ pending: false, error: msg.reason });
+      return;
+    }
+    const prev = this.state.get().game;
+    const g = msg.game;
+    const game: GameState | null = g && {
+      seat: g.seat,
+      view: g.view,
+      seq: g.seq,
+      timer: g.timer ? { seats: g.timer.seats, deadline: Date.now() + g.timer.remainingMs } : null,
+      result: g.result,
+    };
+    const progressed = !prev || !game || game.seq !== prev.seq;
+    this.state.set((s) => ({
+      ...s,
+      room: msg.room,
+      game,
+      pending: progressed ? false : s.pending,
+      error: progressed ? null : s.error,
+      notice: msg.room.buildId !== this.buildId ? '房主的版本和你不同，刷新页面可以更新' : s.notice,
+    }));
+  }
+
+  private becomeHost(checkpointData: string | null): void {
+    let cp: Checkpoint | null = null;
+    if (checkpointData) {
+      try {
+        cp = JSON.parse(checkpointData) as Checkpoint;
+      } catch {
+        cp = null;
+      }
+    }
+    this.engine = new HostEngine(
+      this.registry,
+      {
+        myId: this.myId,
+        buildId: this.buildId,
+        sendTo: (id, msg) => this.link.send({ t: 'relay', to: [id], data: msg }),
+        deliverLocal: (msg) => this.onHostMsg(msg),
+        setMeta: (meta) => {
+          const s = JSON.stringify(meta);
+          if (s !== this.lastMeta) {
+            this.lastMeta = s;
+            this.link.send({ t: 'room.meta', meta });
+          }
+        },
+        setCheckpoint: (data) => {
+          if (data !== this.lastCheckpoint) {
+            this.lastCheckpoint = data;
+            this.link.send({ t: 'room.checkpoint', data });
+          }
+        },
+        notice: (msg) => this.state.set({ notice: msg }),
+      },
+      this.state.get().members,
+      cp,
+      this.hostOpts,
+    );
+  }
+
+  private dropEngine(): void {
+    this.engine?.dispose();
+    this.engine = null;
+    this.lastCheckpoint = '';
+    this.lastMeta = '';
+  }
+}

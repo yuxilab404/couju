@@ -1,0 +1,6 @@
+{
+  "name": "@couju/e2e",
+  "private": true,
+  "type": "module",
+  "dependencies": { "@couju/server": "*", "@couju/platform": "*", "@couju/protocol": "*", "@couju/sdk": "*", "@couju/game-doudizhu": "*" }
+}

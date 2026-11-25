@@ -1,0 +1,53 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: npm
+      - run: echo "COUJU_BUILD_ID=${GITHUB_SHA::12}" >> "$GITHUB_ENV"
+      - run: npm ci
+      - name: 类型检查、依赖方向、单测、构建
+        run: npm run ci
+      - run: npx playwright install --with-deps chromium
+      - name: 端到端
+        run: npm run e2e
+
+      # main 合入后发布构建包；miao 上的 couju-poll 每 2 分钟来取（ADR-0005）
+      - name: 打包
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        run: |
+          mkdir -p out/couju
+          cp dist/server/server.mjs out/couju/
+          cp -r dist/web out/couju/web
+          cp deploy/Dockerfile deploy/miao-deploy.sh out/couju/
+          echo "$COUJU_BUILD_ID" > out/couju/BUILD_ID
+          tar czf out/couju.tar.gz -C out couju
+          (cd out && sha256sum couju.tar.gz > couju.tar.gz.sha256)
+          cp out/couju/BUILD_ID out/BUILD_ID
+      - name: 发布到 deploy Release
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete deploy --cleanup-tag -y || true
+          gh release create deploy out/couju.tar.gz out/couju.tar.gz.sha256 out/BUILD_ID \
+            --target "$GITHUB_SHA" --prerelease --title "部署包 $COUJU_BUILD_ID" \
+            --notes "main@$GITHUB_SHA 的构建包，miao 自动拉取部署。不要手动编辑。"
