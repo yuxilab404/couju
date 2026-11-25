@@ -2,7 +2,7 @@
 
 几个朋友凑一桌玩小游戏的联机平台。人不够的时候，空位由 AI 补上。
 
-> 项目刚起步，还没有能玩的版本。
+> 第一阶段：能登录、建房，和机器人一起打斗地主。线上地址 https://game.zyzl.link （需要被邀请）。
 
 ## 打算做的游戏
 
@@ -27,6 +27,24 @@
 ## 登录
 
 用邮箱验证码登录，不用密码。只有管理员加进白名单的邮箱才能登录，登录后可以改名、换头像。
+
+## 本地跑起来
+
+需要 Node 22.13 以上。
+
+```bash
+npm install
+npm run dev          # 服务端 + Vite，打开 http://127.0.0.1:5173
+```
+
+用 `dev@example.com` 登录（开发模式下验证码打在终端里）。建房后空位会自动放机器人，点"开始"就能打。想两个人试，可以另开一个隐私窗口，用 `COUJU_ADMIN_EMAILS=dev@example.com,dev2@example.com npm run dev` 启动后用第二个邮箱登录。
+
+```bash
+npm run ci           # 类型检查、依赖方向、单测、构建
+npm run e2e          # 浏览器端到端（先 npm run build）
+```
+
+架构见 [`ARCHITECTURE.md`](./ARCHITECTURE.md)，加新游戏只需要新建 `games/<id>/` 并在 `web/src/games.ts` 注册一行。
 
 ## 参与开发
 
