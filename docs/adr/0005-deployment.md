@@ -23,7 +23,7 @@ miao（4 核 / 3.4G）是唯一生产机，和牌手容器共用，实测空闲�
 
 ## 上线前需要 Owner 做的事（到部署那一步时再逐项确认）
 
-1. **域名和反代**：给凑局一个子域名（比如 `couju.zyzl.link`），Caddy 里加一段 `reverse_proxy 127.0.0.1:8790`。WebSocket 不用额外配置。
+1. **域名和反代**：子域名 `game.zyzl.link`（Owner 已定，DNS 由 Owner 解析），Caddy 里加一段 `reverse_proxy 127.0.0.1:8790`。WebSocket 不用额外配置。
 2. **部署账号**：一个能 SSH 到 miao、且只能 `sudo` 执行 `/usr/local/bin/couju-deploy` 的账号，私钥放进本仓库的 Actions secret。（签到系统用的是 `deploy@miao` + 专用 key，可以照做。）
 3. **邮件**：Resend 的 key 和发件地址（可以和签到系统共用一个 Resend 账号）。
 4. **管理员邮箱**：写进 `/var/lib/couju/env` 的 `COUJU_ADMIN_EMAILS`。
