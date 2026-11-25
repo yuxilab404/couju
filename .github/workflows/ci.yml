@@ -2,7 +2,8 @@ name: ci
 
 on:
   push:
-    branches: [main]
+    # TODO(del-when:第一阶段分支合入 main) 首次上线时 main 还没有代码，临时从开发分支发布
+    branches: [main, ccr-f5409734-8nikzc]
   pull_request:
   workflow_dispatch:
 
@@ -32,7 +33,7 @@ jobs:
 
       # main 合入后发布构建包；miao 上的 couju-poll 每 2 分钟来取（ADR-0005）
       - name: 打包
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         run: |
           mkdir -p out/couju
           cp dist/server/server.mjs out/couju/
@@ -43,7 +44,7 @@ jobs:
           (cd out && sha256sum couju.tar.gz > couju.tar.gz.sha256)
           cp out/couju/BUILD_ID out/BUILD_ID
       - name: 发布到 deploy Release
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
