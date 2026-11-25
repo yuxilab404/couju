@@ -24,9 +24,12 @@ miao（4 核 / 3.4G）是唯一生产机，和牌手容器共用，实测空闲�
 - **CI 通过 SSH 推送**（签到系统的做法）：要在 GitHub 上放一把能登录 miao 的私钥，还要一个受限的部署账号。拉取方案没有这把钥匙，零件更少。
 - **rugu**：内存吃紧、曾卡死，不放常驻服务。
 
-## 上线情况（2026-11-25）
+## 上线情况（2026-11-26 更新）
 
-- 域名 `game.zyzl.link`（Owner 选定，DNS 由 Owner 解析）；Caddy 已加反代段。
+- 地址是 **`https://miao.zyzl.link/game/`**：挂在签到系统所在域名的子路径下，Caddy 里 `handle /game/*` 转给 `127.0.0.1:8790`。
+  - 原计划用子域名 `game.zyzl.link`，但 miao 是腾讯云国内机器，没备案的新域名访问 80/443 会被拦截，要求备案。`zyzl.link` 没在腾讯云备案过，Owner 决定先挂到现有域名下（2026-11-26）。
+  - 为此平台支持挂在任意子路径下：服务端由 `COUJU_BASE_URL` 推出前缀，带前缀的请求先去掉前缀再路由，页面里注入 `<base href="/game/">`，前端所有接口、WebSocket、路由和头像地址都相对这个前缀；cookie 的 Path 限定在前缀内，和签到系统互不影响。
+  - 代价：和 `miao.zyzl.link` 同进退。哪天要换独立域名，只改 `COUJU_BASE_URL` 和 Caddy，代码不用动。
 - 邮件复用签到系统的 Resend 账号和已验证域名 `email.zyzl.link`，发件人 `凑局 <game@email.zyzl.link>`。
 - 管理员邮箱与签到系统一致。
 - 运维细节见 [`deploy/README.md`](../../deploy/README.md)。

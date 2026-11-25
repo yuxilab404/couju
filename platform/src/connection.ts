@@ -1,5 +1,6 @@
 /** 到服务端的 WebSocket：保活、断线重连、登录失效检测。 */
 import { LIMITS, WS_PATH, type ClientMsg, type Me, type ServerMsg } from '@couju/protocol';
+import { href } from './base.ts';
 import { Store } from './store.ts';
 
 export type ConnStatus = 'connecting' | 'open' | 'reconnecting' | 'unauthorized';
@@ -84,7 +85,7 @@ export class Connection {
   private async afterClose(): Promise<void> {
     // 握手 401 在浏览器里看不到状态码，用 /api/me 区分"登录失效"和"网络断了"
     try {
-      const r = await fetch('/api/me');
+      const r = await fetch(href('/api/me'));
       if (r.status === 401) {
         this.state.set({ status: 'unauthorized' });
         return;
@@ -105,5 +106,5 @@ export class Connection {
 
 function defaultUrl(): string {
   const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  return `${proto}//${location.host}${WS_PATH}`;
+  return `${proto}//${location.host}${href(WS_PATH)}`;
 }

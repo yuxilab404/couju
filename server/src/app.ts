@@ -67,14 +67,14 @@ export function createApp({ cfg, accounts, rooms, devOutbox }: AppDeps) {
     const b = await body(c);
     const { token, user } = accounts.verifyCode(b.email, b.code);
     setCookie(c, AUTH.cookieName, token, {
-      httpOnly: true, sameSite: 'Lax', secure, path: '/', maxAge: AUTH.sessionTtlMs / 1000,
+      httpOnly: true, sameSite: 'Lax', secure, path: cfg.basePath, maxAge: AUTH.sessionTtlMs / 1000,
     });
     return c.json({ me: toMe(user) });
   });
 
   app.post('/api/auth/logout', (c) => {
     accounts.logout(getCookie(c, AUTH.cookieName));
-    deleteCookie(c, AUTH.cookieName, { path: '/' });
+    deleteCookie(c, AUTH.cookieName, { path: cfg.basePath });
     return c.json({ ok: true });
   });
 
@@ -136,9 +136,23 @@ export function createApp({ cfg, accounts, rooms, devOutbox }: AppDeps) {
   });
 
   // 静态文件：前端在挂载目录里，换文件不重启（ADR-0005）
-  app.get('*', (c) => serveStatic(c, cfg.webDir));
+  app.get('*', (c) => serveStatic(c, cfg.webDir, cfg.basePath));
 
-  return app;
+  // 站点可以挂在子路径下（例如 https://miao.zyzl.link/game/）：带前缀的请求先去掉前缀；
+  // 不带前缀的也照常处理，方便本机健康检查
+  const prefix = cfg.basePath.replace(/\/$/, '');
+  return {
+    fetch(req: Request): Response | Promise<Response> {
+      if (!prefix) return app.fetch(req);
+      const url = new URL(req.url);
+      if (url.pathname === prefix) return Response.redirect(`${url.origin}${prefix}/${url.search}`, 308);
+      if (url.pathname.startsWith(prefix + '/')) {
+        url.pathname = url.pathname.slice(prefix.length);
+        return app.fetch(new Request(url, req));
+      }
+      return app.fetch(req);
+    },
+  };
 }
 
 const MIME: Record<string, string> = {
@@ -154,14 +168,14 @@ const MIME: Record<string, string> = {
   '.txt': 'text/plain; charset=utf-8',
 };
 
-async function serveStatic(c: Context, root: string): Promise<Response> {
+async function serveStatic(c: Context, root: string, basePath: string): Promise<Response> {
   const path = decodeURIComponent(new URL(c.req.url).pathname);
   if (path.startsWith('/api/') || path === WS_PATH) return c.json({ error: '不存在' }, 404);
   const file = normalize(join(root, path));
   if (!file.startsWith(normalize(root) + sep) && file !== normalize(root)) return c.text('forbidden', 403);
   try {
     const st = await stat(file);
-    if (st.isFile()) {
+    if (st.isFile() && !file.endsWith(`${sep}index.html`)) {
       const hashed = path.startsWith('/assets/');
       return c.body(new Uint8Array(await readFile(file)), 200, {
         'Content-Type': MIME[extname(file)] ?? 'application/octet-stream',
@@ -173,21 +187,23 @@ async function serveStatic(c: Context, root: string): Promise<Response> {
   }
   if (path.startsWith('/assets/')) return c.text('not found', 404);
   try {
-    const html = await readFile(join(root, 'index.html'));
-    return c.body(new Uint8Array(html), 200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
+    // 页面里的资源和接口都用相对地址，靠 <base href> 指到站点前缀
+    const html = (await readFile(join(root, 'index.html'), 'utf8')).replace('<base href="/" />', `<base href="${basePath}" />`);
+    return c.body(html, 200, { 'Content-Type': MIME['.html'], 'Cache-Control': 'no-cache' });
   } catch {
     return c.text('前端还没有部署', 503);
   }
 }
 
 /** 把 WebSocket 接到 http server 的 upgrade 上，用登录 cookie 鉴权 */
-export function attachWebSocket(server: Server, accounts: Accounts, rooms: Rooms): WebSocketServer {
+export function attachWebSocket(server: Server, accounts: Accounts, rooms: Rooms, basePath = '/'): WebSocketServer {
+  const wsPaths = new Set([WS_PATH, basePath.replace(/\/$/, '') + WS_PATH]);
   const wss = new WebSocketServer({ noServer: true, maxPayload: LIMITS.maxMessageBytes });
   let nextId = 1;
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://x');
-    if (url.pathname !== WS_PATH) return socket.destroy();
+    if (!wsPaths.has(url.pathname)) return socket.destroy();
     const token = parseCookie(req.headers.cookie ?? '')[AUTH.cookieName];
     const user = accounts.userBySession(token);
     if (!user) {

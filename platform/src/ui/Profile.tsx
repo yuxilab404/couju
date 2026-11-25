@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import type { Me } from '@couju/protocol';
+import { href } from '../base.ts';
 import { api } from './api.ts';
 import { usePlatform } from './App.tsx';
 import { Avatar } from './Avatar.tsx';
@@ -91,7 +92,7 @@ export function Profile() {
       <button
         onClick={async () => {
           await api('POST', '/api/auth/logout');
-          location.href = '/';
+          location.href = href('/');
         }}
       >
         退出登录

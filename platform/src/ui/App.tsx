@@ -10,6 +10,7 @@ import { Lobby } from './Lobby.tsx';
 import { Login } from './Login.tsx';
 import { Profile } from './Profile.tsx';
 import { Room } from './Room.tsx';
+import { href } from '../base.ts';
 import { navigate, parseRoute, usePath } from './router.ts';
 import './app.css';
 
@@ -66,7 +67,7 @@ function Authed({ me, setMe, games, buildId }: { me: Me; setMe(m: Me | null): vo
         <header className="topbar">
           <a
             className="brand"
-            href="/"
+            href={href('/')}
             onClick={(e) => {
               e.preventDefault();
               navigate('/');
@@ -77,11 +78,11 @@ function Authed({ me, setMe, games, buildId }: { me: Me; setMe(m: Me | null): vo
           {cs.status !== 'open' && <span className="conn-badge">{cs.status === 'connecting' ? '连接中…' : '断线重连中…'}</span>}
           <span className="spacer" />
           {me.isAdmin && (
-            <a href="/admin" onClick={(e) => (e.preventDefault(), navigate('/admin'))}>
+            <a href={href('/admin')} onClick={(e) => (e.preventDefault(), navigate('/admin'))}>
               管理
             </a>
           )}
-          <a className="me-link" href="/me" onClick={(e) => (e.preventDefault(), navigate('/me'))}>
+          <a className="me-link" href={href('/me')} onClick={(e) => (e.preventDefault(), navigate('/me'))}>
             <Avatar name={me.nickname} url={me.avatarUrl} id={me.id} size={28} />
             <span className="me-name">{me.nickname}</span>
           </a>

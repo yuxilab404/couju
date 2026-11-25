@@ -1,4 +1,5 @@
 import type { Me } from '@couju/protocol';
+import { href } from '../base.ts';
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) {
@@ -7,7 +8,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(method: string, path: string, body?: unknown, raw?: Blob): Promise<T> {
-  const res = await fetch(path, {
+  const res = await fetch(href(path), {
     method,
     headers: raw ? { 'Content-Type': raw.type } : body !== undefined ? { 'Content-Type': 'application/json' } : {},
     body: raw ?? (body !== undefined ? JSON.stringify(body) : undefined),

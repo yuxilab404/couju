@@ -3,7 +3,7 @@ import type { Mailer } from './mailer.ts';
 
 export function testConfig(over: Partial<Config> = {}): Config {
   return {
-    host: '127.0.0.1', port: 0, dataDir: '', webDir: '/nonexistent', baseUrl: 'http://127.0.0.1',
+    host: '127.0.0.1', port: 0, dataDir: '', webDir: '/nonexistent', baseUrl: 'http://127.0.0.1', basePath: '/',
     adminEmails: new Set(['admin@x.com']), resendApiKey: '', mailFrom: 'test', dev: false, buildId: 'test',
     ...over,
   };

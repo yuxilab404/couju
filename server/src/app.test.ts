@@ -52,6 +52,31 @@ function openWs(cookie?: string): Promise<{ ws: WebSocket; msgs: ServerMsg[] } |
   });
 }
 
+describe('挂在子路径下', () => {
+  it('去掉前缀后路由，页面注入 <base href>，cookie 限定在前缀内', async () => {
+    const web = mkdtempSync(join(tmpdir(), 'couju-web-'));
+    writeFileSync(join(web, 'index.html'), '<head><base href="/" /></head>');
+    const cfg = testConfig({ webDir: web, baseUrl: 'https://x.test/game', basePath: '/game/' });
+    const m = new FakeMailer();
+    const app = createApp({ cfg, accounts: new Accounts(new Db(':memory:'), cfg, m), rooms: new Rooms() });
+    const page = await app.fetch(new Request('http://h/game/room/abc'));
+    expect(await page.text()).toContain('<base href="/game/" />');
+    expect((await app.fetch(new Request('http://h/game/index.html'))).status).toBe(200);
+    expect(await (await app.fetch(new Request('http://h/game/index.html'))).text()).toContain('/game/');
+    const bare = await app.fetch(new Request('http://h/game'));
+    expect(bare.status).toBe(308);
+    expect(bare.headers.get('location')).toBe('http://h/game/');
+    expect((await app.fetch(new Request('http://h/api/health'))).status).toBe(200);
+    const post = (path: string, body: unknown) =>
+      app.fetch(new Request(`http://h${path}`, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }));
+    await post('/game/api/auth/code', { email: 'admin@x.com' });
+    const res = await post('/game/api/auth/verify', { email: 'admin@x.com', code: m.lastCode('admin@x.com') });
+    const cookie = res.headers.get('set-cookie')!;
+    expect(cookie).toContain('Path=/game/');
+    expect(cookie).toContain('Secure');
+  });
+});
+
 describe('HTTP + WS', () => {
   it('health 不需要登录', async () => {
     const r = await (await fetch(`${base}/api/health`)).json();

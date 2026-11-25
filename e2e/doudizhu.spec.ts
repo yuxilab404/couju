@@ -1,11 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 
 async function login(page: Page, email: string) {
-  await page.goto('/');
+  await page.goto('./');
   await page.getByLabel('邮箱').fill(email);
   await page.getByRole('button', { name: '获取验证码' }).click();
   await expect(page.getByLabel('验证码')).toBeVisible();
-  const { code } = await (await page.request.get(`/api/dev/last-code?email=${encodeURIComponent(email)}`)).json();
+  const { code } = await (await page.request.get(`api/dev/last-code?email=${encodeURIComponent(email)}`)).json();
   expect(code).toMatch(/^\d{6}$/);
   await page.getByLabel('验证码').fill(code);
   await page.getByRole('button', { name: '登录', exact: true }).click();
@@ -39,7 +39,7 @@ async function playUntilEnd(page: Page, maxSteps = 400) {
 test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({ page }) => {
   await login(page, 'admin@e2e.test');
   await page.getByRole('button', { name: '建房' }).click();
-  await expect(page).toHaveURL(/\/room\/[a-z0-9]{6}$/);
+  await expect(page).toHaveURL(/\/game\/room\/[a-z0-9]{6}$/);
   await expect(page.getByText('空位会自动放机器人')).toBeVisible();
   await page.getByRole('button', { name: '开始' }).click();
   await playUntilEnd(page);
@@ -57,12 +57,12 @@ test('房主关掉页面，另一个人接手继续打', async ({ browser }) => 
 
   // 每个邮箱 60 秒才能重发一次验证码，所以这里用另一个管理员
   await login(host, 'admin2@e2e.test');
-  const add = await host.request.post('/api/admin/whitelist', { data: { email: 'friend@e2e.test', remark: 'e2e' } });
+  const add = await host.request.post('api/admin/whitelist', { data: { email: 'friend@e2e.test', remark: 'e2e' } });
   expect(add.ok()).toBe(true);
   await login(friend, 'friend@e2e.test');
 
   await host.getByRole('button', { name: '建房' }).click();
-  await expect(host).toHaveURL(/\/room\/[a-z0-9]{6}$/);
+  await expect(host).toHaveURL(/\/game\/room\/[a-z0-9]{6}$/);
   const url = host.url();
   await friend.goto(url);
   await expect(friend.getByText('等房主开始')).toBeVisible();

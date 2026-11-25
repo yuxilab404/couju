@@ -7,6 +7,7 @@ import { RoomSession, type RoomState } from '../session.ts';
 import { scoreKey, type RoomPublic, type SeatSlot } from '../wire.ts';
 import { usePlatform } from './App.tsx';
 import { Avatar } from './Avatar.tsx';
+import { href } from '../base.ts';
 import { navigate } from './router.ts';
 
 const TEAM_COLORS = ['#e76f51', '#2a9d8f', '#8e7dbe', '#e9c46a'];
@@ -19,7 +20,7 @@ export function Room({ roomId }: { roomId: string | null }) {
 
   // 新建的房间拿到房号后改地址，方便复制给朋友
   useEffect(() => {
-    if (roomId === null && st.roomId) history.replaceState(null, '', `/room/${st.roomId}`);
+    if (roomId === null && st.roomId) history.replaceState(null, '', href(`/room/${st.roomId}`));
   }, [roomId, st.roomId]);
 
   if (st.status === 'gone') {

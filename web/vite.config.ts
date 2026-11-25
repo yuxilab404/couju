@@ -15,6 +15,8 @@ const backend = `http://127.0.0.1:${process.env.COUJU_PORT ?? 8790}`;
 
 export default defineConfig({
   root: __dirname,
+  // 资源用相对地址，配合 index.html 里的 <base href>，站点可以挂在任意子路径下
+  base: './',
   plugins: [react()],
   define: { __BUILD_ID__: JSON.stringify(buildId()) },
   build: { outDir: '../dist/web', emptyOutDir: true, target: 'es2022' },

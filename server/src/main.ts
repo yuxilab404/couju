@@ -25,7 +25,7 @@ const server = serve({ fetch: app.fetch, hostname: cfg.host, port: cfg.port }, (
   console.log(`[couju] build=${cfg.buildId} 监听 ${info.address}:${info.port}，前端 ${cfg.webDir}`);
   if (cfg.adminEmails.size === 0) console.warn('[couju] 没有配置 COUJU_ADMIN_EMAILS，没人能管理白名单');
 }) as Server;
-attachWebSocket(server, accounts, rooms);
+attachWebSocket(server, accounts, rooms, cfg.basePath);
 
 setInterval(() => rooms.sweep(), 5_000).unref();
 setInterval(() => accounts.sweep(), 3_600_000).unref();

@@ -1,4 +1,5 @@
 import { useSyncExternalStore } from 'react';
+import { appPath, href } from '../base.ts';
 
 export type Route =
   | { name: 'lobby' }
@@ -11,8 +12,8 @@ const listeners = new Set<() => void>();
 window.addEventListener('popstate', () => listeners.forEach((l) => l()));
 
 export function navigate(path: string, replace = false): void {
-  if (replace) history.replaceState(null, '', path);
-  else history.pushState(null, '', path);
+  if (replace) history.replaceState(null, '', href(path));
+  else history.pushState(null, '', href(path));
   listeners.forEach((l) => l());
 }
 
@@ -31,6 +32,6 @@ export function usePath(): string {
       listeners.add(l);
       return () => listeners.delete(l);
     },
-    () => location.pathname,
+    () => appPath(location.pathname),
   );
 }

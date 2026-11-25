@@ -235,4 +235,4 @@ couju/
 
 ## 10. 部署
 
-miao 上一个容器 `couju`，内存上限 256 MB，只监听 127.0.0.1，由 Owner 的 Caddy 反代。前端静态文件放在挂载目录里、由服务端直接读，所以**只改前端（比如加游戏）时换文件不重启进程，进行中的房间不受影响**。详见 [ADR-0005](./docs/adr/0005-deployment.md)。
+miao 上一个容器 `couju`，内存上限 256 MB，只监听 127.0.0.1，由 Caddy 反代到 `https://miao.zyzl.link/game/`。站点可以挂在任意子路径下：前缀由 `COUJU_BASE_URL` 决定，服务端去掉前缀再路由并给页面注入 `<base href>`，前端所有地址都相对它（`platform/src/base.ts`）。前端静态文件放在挂载目录里、由服务端直接读，所以**只改前端（比如加游戏）时换文件不重启进程，进行中的房间不受影响**。详见 [ADR-0005](./docs/adr/0005-deployment.md)。

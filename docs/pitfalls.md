@@ -13,3 +13,7 @@ Node 22/24 上仍是实验特性，启动时会有一行警告，不影响使用
 ## 3. miao 访问 GitHub 时好时坏
 
 从 miao 直连 GitHub：小请求大多能通，但 `git clone`、分支源码包（codeload）经常卡住或被断开（`GnuTLS recv error`、`Empty reply from server`）。所以部署设计成"CI 打好几百 KB 的包发到 Release，miao 每 2 分钟来取一次"：单次失败不要紧，下一轮再试。不要设计成需要在 miao 上拉源码、装依赖的流程。
+
+## 4. 腾讯云国内机器：没备案的新域名会被拦
+
+miao 是腾讯云国内服务器。腾讯云按请求里的域名（HTTP 的 Host、HTTPS 的 SNI）检查 80/443 端口，没备案的域名会被拦截并提示备案，和解析到哪个 IP 无关。`game.zyzl.link` 加完解析就被拦了，所以凑局改挂在已经在用的 `miao.zyzl.link/game/` 下。以后想换独立域名，先确认域名的备案情况。

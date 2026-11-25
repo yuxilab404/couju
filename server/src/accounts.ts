@@ -43,7 +43,8 @@ export function toPublic(u: UserRow): PublicUser {
   return {
     id: u.id,
     nickname: u.nickname,
-    avatarUrl: u.avatar_ver > 0 ? `/avatars/${u.id}?v=${u.avatar_ver}` : null,
+    // 相对地址，由页面的 <base href> 解析，站点挂在子路径下也能用
+    avatarUrl: u.avatar_ver > 0 ? `avatars/${u.id}?v=${u.avatar_ver}` : null,
   };
 }
 

@@ -11,6 +11,8 @@ export interface Config {
   dataDir: string;
   webDir: string;
   baseUrl: string;
+  /** 对外路径前缀，以 / 结尾，例如 '/game/'；由 baseUrl 推出 */
+  basePath: string;
   adminEmails: Set<string>;
   resendApiKey: string;
   mailFrom: string;
@@ -20,12 +22,14 @@ export interface Config {
 
 export function loadConfig(): Config {
   const dataDir = resolve(env('COUJU_DATA_DIR', '.data'));
+  const baseUrl = env('COUJU_BASE_URL', 'http://127.0.0.1:8790').replace(/\/+$/, '');
   return {
     host: env('COUJU_HOST', '127.0.0.1'),
     port: Number(env('COUJU_PORT', '8790')),
     dataDir,
     webDir: resolve(env('COUJU_WEB_DIR', 'dist/web')),
-    baseUrl: env('COUJU_BASE_URL', 'http://127.0.0.1:8790').replace(/\/+$/, ''),
+    baseUrl,
+    basePath: basePathOf(baseUrl),
     adminEmails: new Set(
       env('COUJU_ADMIN_EMAILS')
         .split(',')
@@ -37,6 +41,11 @@ export function loadConfig(): Config {
     dev: env('COUJU_DEV') === '1',
     buildId: env('COUJU_BUILD_ID', 'dev'),
   };
+}
+
+export function basePathOf(baseUrl: string): string {
+  const p = new URL(baseUrl).pathname.replace(/\/+$/, '');
+  return `${p}/`;
 }
 
 /** 验证码与会话参数，沿用 auto-tiandao-sign（ADR-0004） */
