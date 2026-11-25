@@ -96,8 +96,16 @@ export class RoomSession {
   private enter(): void {
     if (this.disposed) return;
     const { roomId } = this.state.get();
-    if (roomId) this.link.send({ t: 'room.join', roomId });
-    else this.link.send({ t: 'room.create', meta: null });
+    // （重新）连上：服务端那边的快照和大厅摘要可能落后了，清掉去重缓存，房主随后会补发最新的
+    this.lastCheckpoint = '';
+    this.lastMeta = '';
+    if (roomId) {
+      // 重连时房间可能已经关了（全员离线太久、服务端重启）：回到 joining，收到 not_found 就转为 gone
+      this.state.set({ status: 'joining' });
+      this.link.send({ t: 'room.join', roomId });
+    } else {
+      this.link.send({ t: 'room.create', meta: null });
+    }
   }
 
   private toHost(msg: ToHost): void {
@@ -203,16 +211,11 @@ export class RoomSession {
         deliverLocal: (msg) => this.onHostMsg(msg),
         setMeta: (meta) => {
           const s = JSON.stringify(meta);
-          if (s !== this.lastMeta) {
-            this.lastMeta = s;
-            this.link.send({ t: 'room.meta', meta });
-          }
+          // 只有真的发出去了才记下，断线期间的变化重连后会补发
+          if (s !== this.lastMeta && this.link.send({ t: 'room.meta', meta })) this.lastMeta = s;
         },
         setCheckpoint: (data) => {
-          if (data !== this.lastCheckpoint) {
-            this.lastCheckpoint = data;
-            this.link.send({ t: 'room.checkpoint', data });
-          }
+          if (data !== this.lastCheckpoint && this.link.send({ t: 'room.checkpoint', data })) this.lastCheckpoint = data;
         },
         notice: (msg) => this.state.set({ notice: msg }),
       },

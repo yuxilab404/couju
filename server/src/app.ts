@@ -196,11 +196,30 @@ async function serveStatic(c: Context, root: string, basePath: string): Promise<
   }
 }
 
-/** 把 WebSocket 接到 http server 的 upgrade 上，用登录 cookie 鉴权 */
-export function attachWebSocket(server: Server, accounts: Accounts, rooms: Rooms, basePath = '/'): WebSocketServer {
+/**
+ * 把 WebSocket 接到 http server 的 upgrade 上，用登录 cookie 鉴权。
+ * 返回 revalidate()：重新检查每条连接的会话，失效的（停用白名单、退出登录、过期）立即断开。
+ */
+export function attachWebSocket(
+  server: Server,
+  accounts: Accounts,
+  rooms: Rooms,
+  basePath = '/',
+): { wss: WebSocketServer; revalidate: () => void } {
   const wsPaths = new Set([WS_PATH, basePath.replace(/\/$/, '') + WS_PATH]);
   const wss = new WebSocketServer({ noServer: true, maxPayload: LIMITS.maxMessageBytes });
+  const live = new Map<WebSocket, { token: string; conn: Conn }>();
   let nextId = 1;
+
+  const revalidate = () => {
+    for (const [ws, { token, conn }] of live) {
+      if (accounts.userBySession(token)) continue;
+      live.delete(ws);
+      rooms.disconnect(conn);
+      // 4401：登录已失效，前端会转去登录页
+      ws.close(4401, 'unauthorized');
+    }
+  };
 
   server.on('upgrade', (req: IncomingMessage, socket, head) => {
     const url = new URL(req.url ?? '/', 'http://x');
@@ -222,6 +241,7 @@ export function attachWebSocket(server: Server, accounts: Accounts, rooms: Rooms
           ws.terminate();
         },
       };
+      live.set(ws, { token: token!, conn });
       rooms.connect(conn);
       conn.send({ t: 'hello', me: toMe(user) });
       ws.on('message', (raw, isBinary) => {
@@ -237,11 +257,15 @@ export function attachWebSocket(server: Server, accounts: Accounts, rooms: Rooms
         }
         rooms.handle(conn, msg);
       });
-      ws.on('close', () => rooms.disconnect(conn));
-      ws.on('error', () => rooms.disconnect(conn));
+      const gone = () => {
+        live.delete(ws);
+        rooms.disconnect(conn);
+      };
+      ws.on('close', gone);
+      ws.on('error', gone);
     });
   });
-  return wss;
+  return { wss, revalidate };
 }
 
 function parseCookie(header: string): Record<string, string> {

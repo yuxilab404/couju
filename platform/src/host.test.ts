@@ -116,6 +116,31 @@ describe('HostEngine', () => {
     expect(io.lastSync(1)!.room.hosted).toEqual([]);
   });
 
+  it('上一局的掉线计时器不会把下一局同座位的人交给 bot', async () => {
+    const h = engine([member(1), member(2), member(3)]);
+    h.setSeatCount(2);
+    h.start();
+    await flush();
+    // 2 号用户掉线，宽限期内这局就结束了
+    h.membersChanged([member(1), member(2, false), member(3)]);
+    await vi.advanceTimersByTimeAsync(5_000);
+    for (let i = 0; i < 20 && io.lastSync(1)!.room.phase === 'playing'; i++) {
+      const turn = (io.lastSync(1)!.game!.view as { turn: number }).turn;
+      // 掉线的 2 号在服务端看来已离线，但他的操作消息在路上，房主照常处理（不动掉线计时器）
+      h.onRelay(turn === 0 ? 1 : 2, { k: 'act', seq: i, action: { add: 2 } });
+      await vi.advanceTimersByTimeAsync(150);
+    }
+    expect(io.lastSync(1)!.room.phase).toBe('ended');
+    h.backToRoom();
+    await flush();
+    h.onRelay(3, { k: 'sit', seat: 1 });
+    h.start();
+    await flush();
+    expect(io.lastSync(1)!.room.seats[1]).toEqual({ kind: 'human', userId: 3 });
+    await vi.advanceTimersByTimeAsync(30_000);
+    expect(io.lastSync(1)!.room.hosted).toEqual([]);
+  });
+
   it('超时由 bot 代打', async () => {
     const h = engine();
     h.start();

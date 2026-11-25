@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { Accounts } from './accounts.ts';
+import { Accounts, toPublic } from './accounts.ts';
 import { Db } from './db.ts';
 import { HttpError } from './errors.ts';
 import { FakeMailer, testConfig } from './testutil.ts';
@@ -91,6 +91,32 @@ describe('登录', () => {
     await expect(acc.requestCode('admin@x.com', '')).rejects.toBeInstanceOf(HttpError);
   });
 
+  it('管理员权限随配置变化，已有会话立即生效', async () => {
+    const cfg = testConfig();
+    const a = new Accounts(db, cfg, mailer, () => now);
+    const admin = (await (async () => {
+      await a.requestCode('admin@x.com', '');
+      return a.verifyCode('admin@x.com', mailer.lastCode('admin@x.com'));
+    })());
+    await a.addToWhitelist('admin@x.com', '', admin.user);
+    expect(a.userBySession(admin.token)?.is_admin).toBe(1);
+    cfg.adminEmails.delete('admin@x.com');
+    expect(a.userBySession(admin.token)?.is_admin).toBe(0);
+    cfg.adminEmails.add('admin@x.com');
+    expect(a.userBySession(admin.token)?.is_admin).toBe(1);
+  });
+
+  it('停用白名单和退出登录会通知 WebSocket 层', async () => {
+    let revoked = 0;
+    acc.onSessionsRevoked = () => revoked++;
+    const admin = await login('admin@x.com');
+    await acc.addToWhitelist('f@x.com', '', admin.user);
+    acc.updateWhitelist('f@x.com', { enabled: false });
+    expect(revoked).toBe(1);
+    acc.logout(admin.token);
+    expect(revoked).toBe(2);
+  });
+
   it('会话 30 天过期', async () => {
     const { token } = await login('admin@x.com');
     now += 30 * 86_400_000 + 1;
@@ -113,6 +139,8 @@ describe('资料', () => {
     expect(acc.avatar(user.id)?.type).toBe('image/png');
     expect(acc.setAvatar(user.id, png).avatar_ver).toBe(2);
     expect(() => acc.setAvatar(user.id, new Uint8Array([1, 2, 3, 4, 5]))).toThrow('只支持');
-    expect(acc.setAvatar(user.id, null).avatar_ver).toBe(0);
+    expect(toPublic(acc.setAvatar(user.id, null)).avatarUrl).toBeNull();
+    // 删掉再传：版本号接着涨，不复用浏览器里已缓存的旧地址
+    expect(toPublic(acc.setAvatar(user.id, png)).avatarUrl).toBe(`avatars/${user.id}?v=3`);
   });
 });

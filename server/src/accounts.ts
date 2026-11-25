@@ -16,6 +16,7 @@ export interface UserRow {
   email: string;
   nickname: string;
   avatar_ver: number;
+  has_avatar: number;
   is_admin: number;
   created_at: number;
 }
@@ -44,7 +45,8 @@ export function toPublic(u: UserRow): PublicUser {
     id: u.id,
     nickname: u.nickname,
     // 相对地址，由页面的 <base href> 解析，站点挂在子路径下也能用
-    avatarUrl: u.avatar_ver > 0 ? `avatars/${u.id}?v=${u.avatar_ver}` : null,
+    // 版本号只增不减：删掉再传也不会复用旧的缓存地址
+    avatarUrl: u.has_avatar ? `avatars/${u.id}?v=${u.avatar_ver}` : null,
   };
 }
 
@@ -52,7 +54,7 @@ export function toMe(u: UserRow): Me {
   return { ...toPublic(u), email: u.email, isAdmin: !!u.is_admin };
 }
 
-const USER_COLS = 'id, email, nickname, avatar_ver, is_admin, created_at';
+const USER_COLS = 'id, email, nickname, avatar_ver, (avatar IS NOT NULL) AS has_avatar, is_admin, created_at';
 
 export class Accounts {
   constructor(
@@ -147,12 +149,22 @@ export class Accounts {
     if (!row || row.expires_at < this.now()) return null;
     const user = this.userById(row.user_id);
     if (!user || !this.isAllowed(user.email)) return null;
+    // 管理员只认当前配置：配置改了，已有会话立即跟着变
+    const isAdmin = this.cfg.adminEmails.has(user.email) ? 1 : 0;
+    if (user.is_admin !== isAdmin) {
+      this.db.run('UPDATE users SET is_admin=? WHERE id=?', isAdmin, user.id);
+      user.is_admin = isAdmin;
+    }
     return user;
   }
 
   logout(token: string | undefined): void {
     if (token) this.db.run('DELETE FROM sessions WHERE token_hash=?', hashToken(token));
+    this.onSessionsRevoked?.();
   }
+
+  /** 有会话被撤销时调用（停用白名单、退出登录），WebSocket 层据此断开失效的连接 */
+  onSessionsRevoked?: () => void;
 
   userById(id: number): UserRow | undefined {
     return this.db.get<UserRow>(`SELECT ${USER_COLS} FROM users WHERE id=?`, id);
@@ -168,7 +180,7 @@ export class Accounts {
 
   setAvatar(userId: number, data: Uint8Array | null): UserRow {
     if (data === null) {
-      this.db.run("UPDATE users SET avatar=NULL, avatar_type='', avatar_ver=0 WHERE id=?", userId);
+      this.db.run("UPDATE users SET avatar=NULL, avatar_type='' WHERE id=?", userId);
       return this.userById(userId)!;
     }
     if (data.byteLength > 64 * 1024) throw new HttpError(413, '头像不能超过 64 KB');
@@ -234,6 +246,7 @@ export class Accounts {
       if (!enabled) {
         // 停用 = 立即踢掉所有会话
         this.db.run('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE email=?)', email);
+        this.onSessionsRevoked?.();
       }
     }
   }
