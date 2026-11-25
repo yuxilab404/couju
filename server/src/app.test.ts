@@ -65,7 +65,7 @@ describe('挂在子路径下', () => {
     expect(await (await app.fetch(new Request('http://h/game/index.html'))).text()).toContain('/game/');
     const bare = await app.fetch(new Request('http://h/game'));
     expect(bare.status).toBe(308);
-    expect(bare.headers.get('location')).toBe('http://h/game/');
+    expect(bare.headers.get('location')).toBe('/game/');
     expect((await app.fetch(new Request('http://h/api/health'))).status).toBe(200);
     const post = (path: string, body: unknown) =>
       app.fetch(new Request(`http://h${path}`, { method: 'POST', body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }));
