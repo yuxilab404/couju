@@ -6,7 +6,7 @@
 
 | 项 | 位置 |
 |---|---|
-| 访问地址 | https://miao.zyzl.link/game/ （Caddy 在 `miao.zyzl.link` 站点里 `handle /game/*` 反代到 `127.0.0.1:8790`） |
+| 访问地址 | https://miao.zyzl.link/game/ （Caddy 在 `miao.zyzl.link` 站点里用 `@couju path /game /game/*` 反代到 `127.0.0.1:8790`） |
 | 容器 | `couju`，镜像 `couju:<服务端哈希>`，`--memory 256m`，`--restart unless-stopped` |
 | 数据 | `/var/lib/couju/data/couju.db`（SQLite） |
 | 前端 | `/var/lib/couju/web/current` → `releases/<构建号>` |
@@ -68,6 +68,7 @@ sudo install -m 755 deploy/couju-poll.sh /usr/local/bin/couju-poll
 sudo install -m 644 deploy/couju-deploy.service deploy/couju-deploy.timer /etc/systemd/system/
 sudo systemctl daemon-reload && sudo systemctl enable --now couju-deploy.timer
 # Caddyfile 的 miao.zyzl.link 站点里、兜底的 handle 之前加：
-#   handle /game* { reverse_proxy 127.0.0.1:8790 }
+#   @couju path /game /game/*
+#   handle @couju { reverse_proxy 127.0.0.1:8790 }
 # caddy validate 后 reload
 ```
