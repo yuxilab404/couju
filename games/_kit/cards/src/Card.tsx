@@ -9,6 +9,8 @@ export interface CardFace {
   label: string;
   /** JB = 小王（黑），JR = 大王（红） */
   suit: Suit;
+  /** 牌面左下角的小角标，如掼蛋的"配"（逢人配）、"级"（级牌） */
+  badge?: string;
 }
 
 export const SUIT_SYMBOL: Record<Suit, string> = { S: '♠', H: '♥', C: '♣', D: '♦', JB: '★', JR: '★' };
@@ -55,6 +57,11 @@ export function Card({ face, selected, small, interactive }: CardProps) {
             <span className={styles.suit}>{SUIT_SYMBOL[face.suit]}</span>
           </div>
           <div className={styles.pip}>{SUIT_SYMBOL[face.suit]}</div>
+          {face.badge && (
+            <div className={styles.badge} data-badge={face.badge}>
+              {face.badge}
+            </div>
+          )}
         </>
       )}
     </div>

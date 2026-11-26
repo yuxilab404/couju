@@ -198,6 +198,55 @@ test('手机竖屏用手指打完一局唬牌（5 人桌）', async ({ page }, i
   await shot(page, '唬牌结算');
 });
 
+test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await login(page, `${info.project.name}-gd@e2e.test`);
+  await page.getByRole('button', { name: '建房' }).tap();
+  await page.getByLabel('游戏').selectOption({ label: '掼蛋' });
+  await page.getByLabel('打多久').selectOption({ label: '只打一副' });
+  await expect(page.locator('.seats > *')).toHaveCount(4);
+  await expect(page.getByText('队伍 2').first()).toBeVisible();
+  await expectFits(page, '掼蛋房间');
+  await shot(page, '掼蛋房间');
+  await page.getByRole('button', { name: '开始' }).tap();
+
+  const hand = page.locator('[data-card][aria-pressed]');
+  await expect(hand).toHaveCount(27);
+  await expect(page.getByLabel('记牌器').locator('[data-rank]')).toHaveCount(15);
+  await expectFits(page, '掼蛋牌桌');
+  await shot(page, '掼蛋牌桌');
+
+  // 27 张叠在竖屏里也能用手指点中、划选
+  const pressed = page.locator('[data-card][aria-pressed="true"]');
+  await hand.nth(26).tap({ position: { x: 4, y: 20 } });
+  await expect(pressed).toHaveCount(1);
+  await hand.nth(26).tap({ position: { x: 4, y: 20 } });
+  await expect(pressed).toHaveCount(0);
+
+  const result = page.getByRole('heading', { name: '本局结束' });
+  const play = page.getByRole('button', { name: '出牌' });
+  let checkedPlay = false;
+  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+    if (await play.isVisible()) {
+      if (!checkedPlay) {
+        checkedPlay = true;
+        await expectFits(page, '掼蛋出牌');
+        await shot(page, '掼蛋出牌');
+      }
+      const hint = page.getByRole('button', { name: '提示' });
+      if (await hint.isEnabled()) {
+        await hint.tap();
+        await play.tap();
+      } else await page.getByRole('button', { name: '不出' }).tap();
+    }
+    await page.waitForTimeout(250);
+  }
+  await expect(result).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '本局结束' })).toBeInViewport({ ratio: 1 });
+  await expectFits(page, '掼蛋结算');
+  await shot(page, '掼蛋结算');
+});
+
 test('手机竖屏：三个真人打完一局斗地主，结算和资料页显示积分', async ({ page, browser }, info) => {
   const p = info.project.name;
   const others = [];

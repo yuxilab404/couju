@@ -234,7 +234,9 @@ couju/
 ├── sdk/             游戏接口、Rng、游戏测试工具
 ├── games/
 │   ├── _kit/cards/  扑克牌共用：牌面组件、点数排序
-│   └── doudizhu/    规则、视图、bot、画面、测试
+│   ├── doudizhu/    规则、视图、bot、画面、测试
+│   ├── guandan/     掼蛋：4 人两队，从 2 打过 A 是一局（ADR-0002 决定 8）
+│   └── liar-roulette/ 唬牌
 ├── web/             入口：挂载平台外壳 + 游戏注册表 games.ts（Vite）
 ├── e2e/             Playwright：多浏览器打一局、交接
 ├── deploy/          Dockerfile、miao 上的部署脚本
