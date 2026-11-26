@@ -61,6 +61,8 @@
 }
 .handSmall { --w: var(--card-w-small, clamp(26px, 8vw, 38px)); padding-top: 0; }
 .slot { flex: none; }
+/* 可选牌：横向拖动交给我们（批量选牌），竖向仍可滚动页面；拖动时不选中文字 */
+.handInteractive { touch-action: pan-y; user-select: none; -webkit-user-select: none; }
 .slot + .slot {
   /* 百分比外边距按容器宽度算：张数多时重叠更多，最多叠到只露 20% */
   margin-left: max(
