@@ -76,6 +76,7 @@ describe('一副结束与升级', () => {
     expect(r.winners).toEqual([0, 2]);
     expect(r.scores).toEqual([3, -3, 3, -3]);
     expect(r.summary).toMatch(/双上/);
+    expect(r.weight).toBe(1);
   });
 
   it('头游 + 末游：升 1 级，进入下一副；四个人都点继续才发牌', () => {
@@ -182,6 +183,7 @@ describe('打 A', () => {
     expect(t.lastHand!.passedA).toBe(true);
     expect(result(t)!.winners).toEqual([0, 2]);
     expect(result(t)!.summary).toMatch(/过 A/);
+    expect(result(t)!.weight).toBe(2);
   });
 
   it('头游 + 末游不算过 A；三次不过回到 2', () => {

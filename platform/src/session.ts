@@ -7,7 +7,7 @@ import type { Result, Seat } from '@couju/sdk';
 import { HostEngine, type HostOptions } from './host.ts';
 import type { GameRegistry } from './registry.ts';
 import { Store } from './store.ts';
-import type { Checkpoint, RoomPublic, ToHost, ToMember } from './wire.ts';
+import type { Checkpoint, RatingStatus, RoomPublic, ToHost, ToMember } from './wire.ts';
 
 export interface Link {
   send(msg: ClientMsg): boolean;
@@ -21,6 +21,7 @@ export interface GameState {
   seq: number;
   timer: { seats: Seat[]; deadline: number } | null;
   result: Result | null;
+  rating: RatingStatus;
 }
 
 export interface RoomState {
@@ -100,6 +101,7 @@ export class RoomSession {
     // （重新）连上：服务端那边的快照和大厅摘要可能落后了，清掉去重缓存，房主随后会补发最新的
     this.lastCheckpoint = '';
     this.lastMeta = '';
+    this.engine?.linkReset();
     if (roomId) {
       // 重连时房间可能已经关了（全员离线太久、服务端重启）：回到 joining，收到 not_found 就转为 gone
       // 断开期间发出的操作可能丢了，房主补发视图后还轮到自己就再点一次，所以先把按钮放开
@@ -159,6 +161,9 @@ export class RoomSession {
         return;
       case 'relay':
         return this.onRelay(m.from, m.data);
+      case 'rating.result':
+        this.engine?.onRatingResult(m.result);
+        return;
     }
   }
 
@@ -186,6 +191,8 @@ export class RoomSession {
       seq: g.seq,
       timer: g.timer ? { seats: g.timer.seats, deadline: Date.now() + g.timer.remainingMs } : null,
       result: g.result,
+      // TODO(del-when: 积分上线一周后，打开着的旧版本页面都已刷新)：旧版本房主发来的视图没有这个字段
+      rating: g.rating ?? null,
     };
     const progressed = !prev || !game || game.seq !== prev.seq;
     this.state.set((s) => ({
@@ -222,6 +229,7 @@ export class RoomSession {
         setCheckpoint: (data) => {
           if (data !== this.lastCheckpoint && this.link.send({ t: 'room.checkpoint', data })) this.lastCheckpoint = data;
         },
+        reportRating: (report) => this.link.send({ t: 'rating.report', report }),
         notice: (msg) => this.state.set({ notice: msg }),
       },
       this.state.get().members,

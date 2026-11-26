@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { Member } from '@couju/protocol';
+import type { MatchReport, Member } from '@couju/protocol';
 import { HostEngine, type HostIO } from './host.ts';
 import { toy } from './toygame.test-helper.ts';
 import type { Checkpoint, ToMember } from './wire.ts';
 
-const member = (id: number, connected = true): Member => ({ id, nickname: `u${id}`, avatarUrl: null, connected, joinedAt: id });
+const member = (id: number, connected = true): Member => ({ id, nickname: `u${id}`, avatarUrl: null, rating: 1200, connected, joinedAt: id });
 
 class IO implements HostIO {
   myId = 1;
@@ -13,6 +13,9 @@ class IO implements HostIO {
   checkpoint = '';
   meta: unknown = null;
   notices: string[] = [];
+  reports: MatchReport[] = [];
+  online = true;
+  reportRating(r: MatchReport) { if (this.online) this.reports.push(r); return this.online; }
   sendTo(id: number, m: ToMember) { this.push(id, m); }
   deliverLocal(m: ToMember) { this.push(this.myId, m); }
   setMeta(m: unknown) { this.meta = m; }
@@ -201,5 +204,115 @@ describe('HostEngine', () => {
     h.membersChanged([member(1), member(2)]);
     await flush();
     expect(io.lastSync(1)!.room.seats[0]).toEqual({ kind: 'empty' });
+  });
+});
+
+describe('HostEngine 积分上报', () => {
+  /** 两个真人轮流加 2，打到结束 */
+  async function playOut(h: HostEngine, users: number[]) {
+    for (let i = 0; i < 20 && io.lastSync(1)!.room.phase === 'playing'; i++) {
+      const turn = (io.lastSync(1)!.game!.view as { turn: number }).turn;
+      const slot = io.lastSync(1)!.room.seats[turn];
+      if (slot.kind === 'human') h.onRelay(users[turn], { k: 'act', seq: i, action: { add: 2 } });
+      await vi.advanceTimersByTimeAsync(150);
+    }
+    expect(io.lastSync(1)!.room.phase).toBe('ended');
+  }
+
+  it('两个真人：结束时报一次输赢，收到回执后大家看到积分变化', async () => {
+    const h = engine();
+    h.start();
+    await flush();
+    expect(io.lastSync(2)!.game!.rating).toBeNull();
+    await playOut(h, [1, 2]);
+    expect(io.reports).toHaveLength(1);
+    const r = io.reports[0];
+    const winnerSeat = io.lastSync(1)!.game!.result!.winners[0];
+    expect(r).toMatchObject({ gameId: 'toy', weight: 1, winners: [winnerSeat + 1], losers: [2 - winnerSeat] });
+    expect(r.matchId).toMatch(/^[0-9a-f]{16}$/);
+    expect(io.lastSync(2)!.game!.rating).toBe('pending');
+    // 有别的变化也不重复报
+    h.membersChanged([member(1), member(2), member(3)]);
+    await flush();
+    expect(io.reports).toHaveLength(1);
+
+    const result = { matchId: r.matchId, changes: [{ userId: 1, before: 1200, after: 1216 }, { userId: 2, before: 1200, after: 1184 }] };
+    h.onRatingResult({ ...result, matchId: 'other' }); // 别的局的回执不算
+    await flush();
+    expect(io.lastSync(2)!.game!.rating).toBe('pending');
+    h.onRatingResult(result);
+    await flush();
+    expect(io.lastSync(2)!.game!.rating).toEqual(result);
+    expect(JSON.parse(io.checkpoint).game.rating).toEqual(result);
+  });
+
+  it('只有一个真人（其他都是 bot）不计分', async () => {
+    const h = engine([member(1)]);
+    h.start();
+    await flush();
+    await playOut(h, [1, 0]);
+    expect(io.reports).toHaveLength(0);
+    expect(io.lastSync(1)!.game!.rating).toBeNull();
+  });
+
+  it('断线时没发出去：重连后补发', async () => {
+    const h = engine();
+    h.start();
+    await flush();
+    io.online = false;
+    await playOut(h, [1, 2]);
+    expect(io.reports).toHaveLength(0);
+    io.online = true;
+    h.linkReset();
+    await flush();
+    expect(io.reports).toHaveLength(1);
+  });
+
+  it('新房主从已结束、没回执的快照恢复：再报一次（服务端按 matchId 去重）', async () => {
+    const h = engine();
+    h.start();
+    await flush();
+    await playOut(h, [1, 2]);
+    const first = io.reports[0];
+    const cp: Checkpoint = JSON.parse(io.checkpoint);
+    h.dispose();
+
+    io = new IO();
+    io.myId = 2;
+    engine([member(1, false), member(2)], cp);
+    await flush();
+    expect(io.reports).toEqual([first]);
+  });
+});
+
+describe('HostEngine 积分上报跨交接', () => {
+  it('断线时打完、没报出去就开了下一局：未确认的上报进快照，新房主接着报', async () => {
+    const h = engine();
+    h.start();
+    await flush();
+    io.online = false;
+    for (let i = 0; i < 20 && io.lastSync(1)!.room.phase === 'playing'; i++) {
+      const turn = (io.lastSync(1)!.game!.view as { turn: number }).turn;
+      h.onRelay(turn + 1, { k: 'act', seq: i, action: { add: 2 } });
+      await vi.advanceTimersByTimeAsync(150);
+    }
+    expect(io.lastSync(1)!.room.phase).toBe('ended');
+    const oldMatch = JSON.parse(io.checkpoint).game.matchId;
+    h.rematch();
+    await flush();
+    expect(io.reports).toHaveLength(0);
+    const cp: Checkpoint = JSON.parse(io.checkpoint);
+    h.dispose();
+
+    io = new IO();
+    io.myId = 2;
+    const h2 = engine([member(1, false), member(2)], cp);
+    await flush();
+    expect(io.reports.map((r) => r.matchId)).toEqual([oldMatch]);
+    expect(JSON.parse(io.checkpoint).unrated.map((r: { matchId: string }) => r.matchId)).toEqual([oldMatch]);
+    // 收到回执后从快照里去掉
+    h2.onRatingResult({ matchId: oldMatch, changes: [] });
+    await flush();
+    expect(JSON.parse(io.checkpoint).unrated).toEqual([]);
   });
 });

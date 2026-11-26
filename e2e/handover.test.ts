@@ -4,6 +4,8 @@
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ClientMsg, ServerMsg } from '@couju/protocol';
+import { Db } from '@couju/server/db.ts';
+import { Ratings } from '@couju/server/ratings.ts';
 import { Rooms, type Conn } from '@couju/server/rooms.ts';
 import { RoomSession, type Link } from '@couju/platform/session.ts';
 import { toy } from '@couju/platform/toygame.test-helper.ts';
@@ -21,7 +23,7 @@ class Client implements Link {
   private makeConn(): Conn {
     return {
       id: nextConn++,
-      user: { id: this.userId, nickname: `u${this.userId}`, avatarUrl: null },
+      user: { id: this.userId, nickname: `u${this.userId}`, avatarUrl: null, rating: 1200 },
       send: (m) => queueMicrotask(() => this.online && this.msgFns.forEach((f) => f(m))),
       close: () => {},
     };
@@ -244,5 +246,42 @@ describe('房间 + 交接', () => {
     }
     expect(sb.state.get().room!.phase).toBe('ended');
     expect(sc.state.get().game!.result).not.toBeNull();
+  });
+
+  it('两个真人打完一局：服务端记积分，大家在结算里看到变化，成员列表的积分也更新', async () => {
+    const db = new Db(':memory:');
+    for (const id of [1, 2]) db.run('INSERT INTO users(id, email, nickname, created_at) VALUES (?,?,?,?)', id, `u${id}@x`, `u${id}`, 0);
+    const ratings = new Ratings(db);
+    const rooms = new Rooms({ hostGraceMs: 15_000, ratings });
+    const a = new Client(rooms, 1), b = new Client(rooms, 2);
+    a.goOnline(); b.goOnline();
+    const sa = new RoomSession(a, 1, [toy], 'v1', null, opts);
+    await tick();
+    const sb = new RoomSession(b, 2, [toy], 'v1', sa.state.get().roomId!, opts);
+    await tick();
+    sa.engine!.start();
+    await tick();
+    for (let i = 0; i < 20 && sb.state.get().room!.phase === 'playing'; i++) {
+      const turn = (sb.state.get().game!.view as { turn: number }).turn;
+      [sa, sb][turn].act({ add: 2 });
+      await tick(60);
+    }
+    expect(sb.state.get().room!.phase).toBe('ended');
+    const winner = sb.state.get().game!.result!.winners[0] + 1;
+    const loser = 3 - winner;
+    const rating = sb.state.get().game!.rating;
+    expect(rating).toEqual({
+      matchId: expect.any(String),
+      changes: [{ userId: winner, before: 1200, after: 1216 }, { userId: loser, before: 1200, after: 1184 }],
+    });
+    expect(sa.state.get().game!.rating).toEqual(rating);
+    expect(ratings.current([winner, loser])).toEqual(new Map([[winner, 1216], [loser, 1184]]));
+    expect(sb.state.get().members.find((m) => m.id === winner)!.rating).toBe(1216);
+
+    // 再来一局又是新的 matchId
+    sa.engine!.rematch();
+    await tick();
+    expect(sb.state.get().game!.rating).toBeNull();
+    sa.dispose(); sb.dispose();
   });
 });

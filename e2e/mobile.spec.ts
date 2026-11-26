@@ -58,6 +58,22 @@ async function login(page: Page, email: string) {
   await expect(page.getByRole('heading', { name: '开一桌' })).toBeVisible();
 }
 
+/** 斗地主轮到自己就点一下：叫分阶段叫 3 分或不叫；出牌阶段按提示出，提示不了就不要 */
+async function tapOnce(page: Page) {
+  const bid3 = page.getByRole('button', { name: '3 分' });
+  const play = page.getByRole('button', { name: '出牌' });
+  if (await bid3.isVisible()) {
+    if (await bid3.isEnabled()) await bid3.tap();
+    else await page.getByRole('button', { name: '不叫' }).tap();
+  } else if (await play.isVisible()) {
+    const hint = page.getByRole('button', { name: '提示' });
+    if (await hint.isEnabled()) {
+      await hint.tap();
+      await play.tap();
+    } else await page.getByRole('button', { name: '不要' }).tap();
+  }
+}
+
 /** 轮到自己就点：叫分阶段叫 3 分或不叫；出牌阶段按提示出，提示不了就不要 */
 async function tapUntilEnd(page: Page, maxSteps = 400) {
   const result = page.getByRole('heading', { name: '本局结束' });
@@ -230,3 +246,38 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
   await expectFits(page, '掼蛋结算');
   await shot(page, '掼蛋结算');
 });
+
+test('手机竖屏：三个真人打完一局斗地主，结算和资料页显示积分', async ({ page, browser }, info) => {
+  const p = info.project.name;
+  const others = [];
+  for (let i = 0; i < 2; i++) others.push(await (await browser.newContext({ ...info.project.use })).newPage());
+  const pages = [page, ...others];
+  for (let i = 0; i < 3; i++) await login(pages[i], `${p}-r${i + 1}@e2e.test`);
+  await page.getByRole('button', { name: '建房' }).tap();
+  await expect(page).toHaveURL(/\/game\/room\/[a-z0-9]{6}$/);
+  for (const o of others) await o.goto(page.url());
+  await expect(page.locator('.seats > *').filter({ hasText: '1200 分' })).toHaveCount(3);
+  await expectFits(page, '座位上的积分');
+  await page.getByRole('button', { name: '开始' }).tap();
+
+  const result = page.getByRole('heading', { name: '本局结束' });
+  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+    for (const x of pages) await tapOnce(x);
+    await page.waitForTimeout(150);
+  }
+  await expect(result).toBeVisible();
+  const dialog = page.getByRole('dialog', { name: '本局结束' });
+  // 三个真人必然分在两边，一定计分
+  await expect(dialog).toContainText(/积分 1\d{3}（[+-]\d+）/);
+  await expect(dialog).toBeInViewport({ ratio: 1 });
+  await expectFits(page, '计分结算');
+  await shot(page, '计分结算');
+
+  await page.locator('.me-link').tap();
+  await expect(page.getByRole('heading', { name: /^积分 1\d{3}$/ })).toBeVisible();
+  await expect(page.getByText('计分 1 局')).toBeVisible();
+  await expectFits(page, '资料页积分');
+  await shot(page, '资料页积分');
+  for (const o of others) await o.context().close();
+});
+

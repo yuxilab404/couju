@@ -14,6 +14,11 @@ export interface Result {
   scores?: number[];
   /** 给人看的一句话，例如 "地主获胜 · 春天 · ×8" */
   summary: string;
+  /**
+   * 账号积分的分量（ADR-0007），默认 1。输赢有大有小的游戏按这局的大小给（斗地主按倍数），
+   * 平台夹到 [0, 3]；0 表示这局不计积分。赢的是 winners 里的真人，输的是其余座位上的真人。
+   */
+  weight?: number;
 }
 
 export interface OptionChoice<T = unknown> {

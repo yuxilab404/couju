@@ -10,6 +10,7 @@ import { LIMITS, WS_PATH, type ClientMsg, type ServerMsg } from '@couju/protocol
 import { Accounts, toMe, toPublic, type UserRow } from './accounts.ts';
 import { AUTH, type Config } from './config.ts';
 import { HttpError } from './errors.ts';
+import type { Ratings } from './ratings.ts';
 import { Rooms, type Conn } from './rooms.ts';
 
 type Env = { Variables: { user: UserRow; ip: string } };
@@ -18,6 +19,7 @@ export interface AppDeps {
   cfg: Config;
   accounts: Accounts;
   rooms: Rooms;
+  ratings: Ratings;
   /** 仅开发模式：取最近一封邮件里的验证码 */
   devOutbox?: Map<string, string>;
 }
@@ -38,7 +40,7 @@ async function body(c: Context): Promise<Record<string, unknown>> {
   }
 }
 
-export function createApp({ cfg, accounts, rooms, devOutbox }: AppDeps) {
+export function createApp({ cfg, accounts, rooms, ratings, devOutbox }: AppDeps) {
   const app = new Hono<Env>();
   const secure = cfg.baseUrl.startsWith('https://');
 
@@ -113,6 +115,13 @@ export function createApp({ cfg, accounts, rooms, devOutbox }: AppDeps) {
     const user = accounts.setAvatar(c.get('user').id, null);
     rooms.updateUser(toPublic(user));
     return c.json({ me: toMe(user) });
+  });
+
+  // 积分历史（ADR-0007）：自己的，或者同一个站点里任何朋友的
+  app.get('/api/ratings/:id', login, (c) => {
+    const user = accounts.userById(Number(c.req.param('id')));
+    if (!user) throw new HttpError(404, '没有这个人');
+    return c.json({ user: toPublic(user), ...ratings.stats(user.id), history: ratings.history(user.id) });
   });
 
   app.get('/avatars/:id', login, (c) => {

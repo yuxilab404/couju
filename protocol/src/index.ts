@@ -10,6 +10,8 @@ export interface PublicUser {
   nickname: string;
   /** 没有头像时为 null，前端画首字 */
   avatarUrl: string | null;
+  /** 账号积分（ADR-0007），初始 RATING.initial */
+  rating: number;
 }
 
 export interface Me extends PublicUser {
@@ -35,6 +37,52 @@ export interface RoomSummary {
 
 export type RelayTarget = 'host' | 'all' | UserId[];
 
+/**
+ * 房主上报的一局输赢（ADR-0007）。服务端只按"谁赢谁输"算积分，不认识游戏：
+ * gameId 只是记进历史的标签。
+ */
+export interface MatchReport {
+  /** 房主开局时生成，进快照；同一个 matchId 只记一次，换房主后重报也不会重复计分 */
+  matchId: string;
+  gameId: string;
+  /** 本局分量，平台已夹到 [0, RATING.maxWeight]；服务端会再夹一次 */
+  weight: number;
+  /** 赢的真人；bot 不参与积分 */
+  winners: UserId[];
+  /** 输的真人 */
+  losers: UserId[];
+}
+
+export interface RatingChange {
+  userId: UserId;
+  before: number;
+  after: number;
+}
+
+/** 服务端记下一局后回给房主的结果；重复上报回同一份 */
+export interface MatchRating {
+  matchId: string;
+  changes: RatingChange[];
+}
+
+/** 一条积分历史（个人资料页） */
+export interface RatingHistoryEntry {
+  matchId: string;
+  gameId: string;
+  at: number;
+  won: boolean;
+  before: number;
+  after: number;
+}
+
+export const RATING = {
+  initial: 1200,
+  /** 两个真人对局、分量 1、水平相当时，赢家拿 K/2 */
+  k: 32,
+  maxWeight: 3,
+  maxPlayers: 12,
+} as const;
+
 /** 浏览器 → 服务端 */
 export type ClientMsg =
   | { t: 'ping' }
@@ -45,6 +93,8 @@ export type ClientMsg =
   | { t: 'room.leave' }
   | { t: 'room.meta'; meta: unknown }
   | { t: 'room.checkpoint'; data: string | null }
+  /** 仅房主；一局结束时上报输赢 */
+  | { t: 'rating.report'; report: MatchReport }
   | { t: 'relay'; to: RelayTarget; data: unknown };
 
 /** 服务端 → 浏览器 */
@@ -57,6 +107,8 @@ export type ServerMsg =
   | { t: 'room.host'; roomId: string; hostId: UserId; checkpoint?: string | null }
   | { t: 'room.left'; roomId: string; reason: 'leave' | 'closed' | 'replaced' }
   | { t: 'relay'; from: UserId; data: unknown }
+  /** 回给上报的房主 */
+  | { t: 'rating.result'; result: MatchRating }
   | { t: 'error'; code: ErrorCode; message: string };
 
 export type ErrorCode = 'bad_request' | 'not_found' | 'not_host' | 'not_in_room' | 'too_large' | 'rate_limited';

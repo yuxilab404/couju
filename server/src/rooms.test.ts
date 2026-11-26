@@ -1,5 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerMsg } from '@couju/protocol';
+import { Db } from './db.ts';
+import { Ratings } from './ratings.ts';
 import { Rooms, type Conn } from './rooms.ts';
 
 class FakeConn implements Conn {
@@ -7,7 +9,7 @@ class FakeConn implements Conn {
   readonly id = ++FakeConn.n;
   inbox: ServerMsg[] = [];
   closed = false;
-  constructor(public user: { id: number; nickname: string; avatarUrl: null }) {}
+  constructor(public user: { id: number; nickname: string; avatarUrl: null; rating: number }) {}
   send(m: ServerMsg) { this.inbox.push(m); }
   close() { this.closed = true; }
   last<T extends ServerMsg['t']>(t: T) {
@@ -15,7 +17,7 @@ class FakeConn implements Conn {
   }
 }
 
-const user = (id: number) => ({ id, nickname: `u${id}`, avatarUrl: null });
+const user = (id: number) => ({ id, nickname: `u${id}`, avatarUrl: null, rating: 1200 });
 let rooms: Rooms;
 
 beforeEach(() => {
@@ -201,5 +203,43 @@ describe('重启交接（ADR-0006）', () => {
     const x = connect(5);
     rooms.handle(x, { t: 'room.join', roomId });
     expect(x.last('error')).toMatchObject({ code: 'not_found' });
+  });
+});
+
+describe('Rooms 积分上报', () => {
+  function withRatings() {
+    const db = new Db(':memory:');
+    for (const id of [1, 2, 3]) db.run('INSERT INTO users(id, email, nickname, created_at) VALUES (?,?,?,?)', id, `u${id}@x`, `u${id}`, 0);
+    rooms = new Rooms({ hostGraceMs: 15_000, emptyRoomMs: 60_000, ratings: new Ratings(db) });
+    return setup();
+  }
+  const report = { matchId: 'abcdef0123456789', gameId: 'toy', weight: 1, winners: [1], losers: [2] };
+
+  it('只有房主能报；报完回执给房主，成员列表里的积分跟着变', () => {
+    const { a, b, c } = withRatings();
+    rooms.handle(b, { t: 'rating.report', report });
+    expect(b.last('error')?.code).toBe('not_host');
+    rooms.handle(a, { t: 'rating.report', report });
+    expect(a.last('rating.result')).toEqual({
+      t: 'rating.result',
+      result: { matchId: report.matchId, changes: [{ userId: 1, before: 1200, after: 1216 }, { userId: 2, before: 1200, after: 1184 }] },
+    });
+    expect(b.last('rating.result')).toBeUndefined();
+    expect(c.last('room.state')!.members.map((m) => m.rating)).toEqual([1216, 1184, 1200]);
+  });
+
+  it('重报同一局：回执相同，分数不变', () => {
+    const { a, c } = withRatings();
+    rooms.handle(a, { t: 'rating.report', report });
+    const first = a.last('rating.result');
+    rooms.handle(a, { t: 'rating.report', report });
+    expect(a.last('rating.result')).toEqual(first);
+    expect(c.last('room.state')!.members.map((m) => m.rating)).toEqual([1216, 1184, 1200]);
+  });
+
+  it('形状不对返回 bad_request', () => {
+    const { a } = withRatings();
+    rooms.handle(a, { t: 'rating.report', report: { ...report, winners: [1], losers: [1] } });
+    expect(a.last('error')?.code).toBe('bad_request');
   });
 });

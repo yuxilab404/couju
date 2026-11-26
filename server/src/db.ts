@@ -40,6 +40,23 @@ CREATE TABLE IF NOT EXISTS sessions (
   created_at INTEGER NOT NULL
 );
 CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id);
+-- 积分（ADR-0007）：一局一行；match_key 是房主开局时生成的 matchId，重复上报只记一次
+CREATE TABLE IF NOT EXISTS matches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  match_key TEXT NOT NULL UNIQUE,
+  game_id TEXT NOT NULL,
+  weight REAL NOT NULL,
+  created_at INTEGER NOT NULL
+);
+-- 每局每个计分的真人一行；当前积分 = 初始分 + SUM(delta)，不另存
+CREATE TABLE IF NOT EXISTS rating_changes (
+  match_id INTEGER NOT NULL REFERENCES matches(id),
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  won INTEGER NOT NULL,
+  delta INTEGER NOT NULL,
+  PRIMARY KEY (match_id, user_id)
+);
+CREATE INDEX IF NOT EXISTS idx_rating_changes_user ON rating_changes(user_id, match_id);
 `;
 
 export type Row = Record<string, unknown>;

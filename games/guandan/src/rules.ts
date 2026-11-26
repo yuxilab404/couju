@@ -428,7 +428,9 @@ export function result(s: State): Result | null {
     summary = `${TEAM_NAME[w]}过 A 获胜 · 打了 ${s.hand} 副 · ${s.teamLevels[0] === ACE ? 'A' : s.teamLevels[0]} : ${s.teamLevels[1] === ACE ? 'A' : s.teamLevels[1]}`;
     pts = 1;
   }
-  return { winners, scores: [0, 1, 2, 3].map((i) => (teamOf(i) === w ? pts : -pts)), summary };
+  // 积分分量（ADR-0007）：整场打过 A 要半小时以上，算 2；只打一副按升级数，双上 1、头游+三游 2/3、头游+末游 1/3
+  const weight = s.opts.length === 'one' ? h.up / 3 : 2;
+  return { winners, scores: [0, 1, 2, 3].map((i) => (teamOf(i) === w ? pts : -pts)), summary, weight };
 }
 
 export function view(s: State, seat: Seat | null): View {
