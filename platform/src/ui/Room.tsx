@@ -357,14 +357,15 @@ function DraggableResult({ children }: { children: ReactNode }) {
     if (!d || d.id !== e.pointerId) return;
     let x = d.ox + e.clientX - d.x;
     let y = d.oy + e.clientY - d.y;
-    // 至少留一截标题在屏幕里，拖出去也能拖回来
+    // 至少留一截标题在屏幕里，拖出去也能拖回来；上边界是吸顶导航栏的下沿，否则标题会被它盖住
     const r = box.current?.getBoundingClientRect();
     if (r) {
       const keep = 48;
+      const ceiling = Math.max(0, document.querySelector('.topbar')?.getBoundingClientRect().bottom ?? 0);
       const left = r.left - offset.x + x;
       const top = r.top - offset.y + y;
       x += Math.max(0, keep - (left + r.width)) - Math.max(0, left - (innerWidth - keep));
-      y += Math.max(0, -top) - Math.max(0, top - (innerHeight - keep));
+      y += Math.max(0, ceiling - top) - Math.max(0, top - (innerHeight - keep));
     }
     setOffset({ x, y });
   };
