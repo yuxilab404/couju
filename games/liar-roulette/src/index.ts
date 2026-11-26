@@ -9,7 +9,7 @@ export type { Action, State, View } from './rules.ts';
 const liarRoulette = defineTurnGame<State, Action, View>({
   id: 'liar-roulette',
   version: 1,
-  name: '吹牛轮盘',
+  name: '唬牌',
   mode: 'turn',
   players: { min: 3, max: 5 },
   setup: ({ numPlayers, rng }) => rules.setup({ numPlayers, rng }),

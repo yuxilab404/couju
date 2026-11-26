@@ -1,4 +1,4 @@
-/** 吹牛轮盘牌桌画面 */
+/** 唬牌牌桌画面 */
 import { Card, CardBack, Hand, type CardFace, type Suit } from '@couju/kit-cards';
 import type { Seat, SeatInfo, TurnUIProps } from '@couju/sdk';
 import { useEffect, useState } from 'react';

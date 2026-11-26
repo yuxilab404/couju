@@ -11,10 +11,10 @@ async function login(page: Page, email: string) {
   await expect(page.getByRole('heading', { name: '开一桌' })).toBeVisible();
 }
 
-test('吹牛轮盘：一个人 + 三个机器人打到只剩一个活人', async ({ page }) => {
+test('唬牌：一个人 + 三个机器人打到只剩一个活人', async ({ page }) => {
   await login(page, 'admin3@e2e.test');
   await page.getByRole('button', { name: '建房' }).click();
-  await page.getByLabel('游戏').selectOption({ label: '吹牛轮盘' });
+  await page.getByLabel('游戏').selectOption({ label: '唬牌' });
   await page.getByLabel('人数').selectOption('4');
   await expect(page.locator('.seats > *')).toHaveCount(4);
   await page.getByRole('button', { name: '开始' }).click();
