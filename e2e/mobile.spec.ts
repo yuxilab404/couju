@@ -173,7 +173,9 @@ test('手机竖屏用手指打完一局唬牌（5 人桌）', async ({ page }, i
   let played = 0;
   let called = 0;
   let checkedPlay = false;
-  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+  // 按时间而不是按轮数兜底：bot 有思考延迟、唬牌翻牌要停 3 秒多（ADR-0008），一局的长短看运气
+  const until = Date.now() + 240_000;
+  for (let i = 0; Date.now() < until && !(await result.isVisible()); i++) {
     const canLiar = await liar.isVisible();
     const canPlay = await primary.isVisible();
     if (canLiar && (!canPlay || called < played)) {
@@ -192,6 +194,8 @@ test('手机竖屏用手指打完一局唬牌（5 人桌）', async ({ page }, i
     }
     await page.waitForTimeout(250);
   }
+  const showdowns = await page.locator('[data-showdown]').getAttribute('data-showdown').catch(() => null);
+  info.annotations.push({ type: '本局', description: `翻牌 ${showdowns ?? 0} 次，出牌 ${played} 次，喊骗子 ${called} 次` });
   await expect(result).toBeVisible();
   await expect(page.getByRole('dialog', { name: '本局结束' })).toBeInViewport({ ratio: 1 });
   await expectFits(page, '唬牌结算');
@@ -226,7 +230,9 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
   const result = page.getByRole('heading', { name: '本局结束' });
   const play = page.getByRole('button', { name: '出牌' });
   let checkedPlay = false;
-  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+  // 按时间而不是按轮数兜底：bot 有思考延迟、唬牌翻牌要停 3 秒多（ADR-0008），一局的长短看运气
+  const until = Date.now() + 240_000;
+  for (let i = 0; Date.now() < until && !(await result.isVisible()); i++) {
     if (await play.isVisible()) {
       if (!checkedPlay) {
         checkedPlay = true;
@@ -261,7 +267,9 @@ test('手机竖屏：三个真人打完一局斗地主，结算和资料页显�
   await page.getByRole('button', { name: '开始' }).tap();
 
   const result = page.getByRole('heading', { name: '本局结束' });
-  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+  // 按时间而不是按轮数兜底：bot 有思考延迟、唬牌翻牌要停 3 秒多（ADR-0008），一局的长短看运气
+  const until = Date.now() + 240_000;
+  for (let i = 0; Date.now() < until && !(await result.isVisible()); i++) {
     for (const x of pages) await tapOnce(x);
     await page.waitForTimeout(150);
   }
