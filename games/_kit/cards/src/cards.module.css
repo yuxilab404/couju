@@ -27,6 +27,8 @@
   line-height: 1;
 }
 .rank { font-weight: 700; font-size: calc(var(--cw) * 0.34); letter-spacing: -0.04em; }
+/* 两位数（10）收窄：手牌叠得紧时每张只露出一窄条，不收窄就会被下一张盖成 "1" */
+.rankWide { font-size: calc(var(--cw) * 0.3); letter-spacing: -0.12em; margin-left: -0.06em; }
 .suit { font-size: calc(var(--cw) * 0.28); }
 .pip {
   position: absolute;

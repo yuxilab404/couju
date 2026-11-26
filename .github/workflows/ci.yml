@@ -29,6 +29,13 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - name: 端到端
         run: npm run e2e
+      - name: 上传端到端报告（含手机端截图）
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-report
+          path: playwright-report/
+          retention-days: 14
 
       # main 合入后发布构建包；miao 上的 couju-poll 每 2 分钟来取（ADR-0005）
       - name: 打包
