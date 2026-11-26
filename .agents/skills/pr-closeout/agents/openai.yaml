@@ -1,0 +1,4 @@
+interface:
+  display_name: "PR Closeout"
+  short_description: "区分 PR 只读与收口授权，核验 exact head、CI 与 Codex 审查后再合并"
+  default_prompt: "Use $pr-closeout to inspect a referenced pull request read-only, or follow it through merge only when I explicitly authorize closeout."
