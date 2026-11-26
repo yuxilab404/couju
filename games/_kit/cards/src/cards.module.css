@@ -72,3 +72,17 @@
     min(calc(var(--w) * -0.35), calc((100% - var(--w)) / (var(--n) - 1) - var(--w)))
   );
 }
+/* 角标：叠起来时每张只露出左边一窄条，所以放在左边、牌角下面 */
+.badge {
+  position: absolute;
+  left: 4%;
+  bottom: 5%;
+  font-size: calc(var(--cw) * 0.22);
+  line-height: 1;
+  padding: 1px 2px;
+  border-radius: 3px;
+  background: #c62828;
+  color: #fff;
+  font-weight: 700;
+}
+.badge[data-badge='级'] { background: #f9a825; color: #3e2700; }

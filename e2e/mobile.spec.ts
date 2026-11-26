@@ -136,19 +136,19 @@ test('手机竖屏用手指从登录一路打完一局斗地主', async ({ page 
   await expect(page.getByRole('heading', { name: '本局结束' })).toBeHidden();
 });
 
-test('手机竖屏用手指打完一局吹牛轮盘（5 人桌）', async ({ page }, info) => {
+test('手机竖屏用手指打完一局唬牌（5 人桌）', async ({ page }, info) => {
   await login(page, `${info.project.name}-lr@e2e.test`);
   await page.getByRole('button', { name: '建房' }).tap();
-  await page.getByLabel('游戏').selectOption({ label: '吹牛轮盘' });
+  await page.getByLabel('游戏').selectOption({ label: '唬牌' });
   // 人数最多的桌：座位最挤
   await page.getByLabel('人数').selectOption('5');
   await expect(page.locator('.seats > *')).toHaveCount(5);
-  await expectFits(page, '吹牛轮盘房间');
+  await expectFits(page, '唬牌房间');
   await page.getByRole('button', { name: '开始' }).tap();
 
   await expect(page.locator('[data-card][aria-pressed]')).toHaveCount(5);
-  await expectFits(page, '吹牛轮盘牌桌');
-  await shot(page, '吹牛轮盘牌桌');
+  await expectFits(page, '唬牌牌桌');
+  await shot(page, '唬牌牌桌');
 
   const result = page.getByRole('heading', { name: '本局结束' });
   const liar = page.getByRole('button', { name: '骗子！' });
@@ -168,8 +168,8 @@ test('手机竖屏用手指打完一局吹牛轮盘（5 人桌）', async ({ pag
       await expect(pressed).toHaveCount(1);
       if (!checkedPlay) {
         checkedPlay = true;
-        await expectFits(page, '吹牛轮盘出牌');
-        await shot(page, '吹牛轮盘出牌');
+        await expectFits(page, '唬牌出牌');
+        await shot(page, '唬牌出牌');
       }
       await page.getByRole('button', { name: /^出 1 张/ }).tap();
       played++;
@@ -178,6 +178,55 @@ test('手机竖屏用手指打完一局吹牛轮盘（5 人桌）', async ({ pag
   }
   await expect(result).toBeVisible();
   await expect(page.getByRole('dialog', { name: '本局结束' })).toBeInViewport({ ratio: 1 });
-  await expectFits(page, '吹牛轮盘结算');
-  await shot(page, '吹牛轮盘结算');
+  await expectFits(page, '唬牌结算');
+  await shot(page, '唬牌结算');
+});
+
+test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', async ({ page }, info) => {
+  test.setTimeout(240_000);
+  await login(page, `${info.project.name}-gd@e2e.test`);
+  await page.getByRole('button', { name: '建房' }).tap();
+  await page.getByLabel('游戏').selectOption({ label: '掼蛋' });
+  await page.getByLabel('打多久').selectOption({ label: '只打一副' });
+  await expect(page.locator('.seats > *')).toHaveCount(4);
+  await expect(page.getByText('队伍 2').first()).toBeVisible();
+  await expectFits(page, '掼蛋房间');
+  await shot(page, '掼蛋房间');
+  await page.getByRole('button', { name: '开始' }).tap();
+
+  const hand = page.locator('[data-card][aria-pressed]');
+  await expect(hand).toHaveCount(27);
+  await expect(page.getByLabel('记牌器').locator('[data-rank]')).toHaveCount(15);
+  await expectFits(page, '掼蛋牌桌');
+  await shot(page, '掼蛋牌桌');
+
+  // 27 张叠在竖屏里也能用手指点中、划选
+  const pressed = page.locator('[data-card][aria-pressed="true"]');
+  await hand.nth(26).tap({ position: { x: 4, y: 20 } });
+  await expect(pressed).toHaveCount(1);
+  await hand.nth(26).tap({ position: { x: 4, y: 20 } });
+  await expect(pressed).toHaveCount(0);
+
+  const result = page.getByRole('heading', { name: '本局结束' });
+  const play = page.getByRole('button', { name: '出牌' });
+  let checkedPlay = false;
+  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+    if (await play.isVisible()) {
+      if (!checkedPlay) {
+        checkedPlay = true;
+        await expectFits(page, '掼蛋出牌');
+        await shot(page, '掼蛋出牌');
+      }
+      const hint = page.getByRole('button', { name: '提示' });
+      if (await hint.isEnabled()) {
+        await hint.tap();
+        await play.tap();
+      } else await page.getByRole('button', { name: '不出' }).tap();
+    }
+    await page.waitForTimeout(250);
+  }
+  await expect(result).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '本局结束' })).toBeInViewport({ ratio: 1 });
+  await expectFits(page, '掼蛋结算');
+  await shot(page, '掼蛋结算');
 });
