@@ -42,6 +42,40 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
   await expect(page).toHaveURL(/\/game\/room\/[a-z0-9]{6}$/);
   await expect(page.getByText('空位会自动放机器人')).toBeVisible();
   await page.getByRole('button', { name: '开始' }).click();
+
+  // 拖拽批量选牌：按住左键从第 1 张拖到第 4 张，松开后这 4 张都选上；再从选中的牌拖回来就取消
+  const hand = page.locator('[data-card][aria-pressed]');
+  await expect(hand).toHaveCount(17);
+  const box = async (i: number) => (await hand.nth(i).boundingBox())!;
+  const drag = async (from: number, to: number) => {
+    const a = await box(from), b = await box(to);
+    await page.mouse.move(a.x + 6, a.y + a.height * 0.7);
+    await page.mouse.down();
+    await page.mouse.move((a.x + b.x) / 2 + 6, b.y + b.height * 0.7, { steps: 4 });
+    await page.mouse.move(b.x + 6, b.y + b.height * 0.7, { steps: 4 });
+    await page.mouse.up();
+  };
+  const pressed = () => page.locator('[data-card][aria-pressed="true"]');
+  await drag(0, 3);
+  await expect(pressed()).toHaveCount(4);
+  await drag(2, 1); // 从选中的第 3 张往左拖：第 2、3 张取消，剩第 1、4 张
+  await expect(pressed()).toHaveCount(2);
+  await drag(1, 2); // 从没选中的第 2 张拖：第 2、3 张选回来
+  await expect(pressed()).toHaveCount(4);
+  await drag(3, 0); // 从选中的第 4 张拖回最左：全部取消
+  await expect(pressed()).toHaveCount(0);
+  // 单击仍是切换一张
+  await hand.nth(5).click({ position: { x: 6, y: 20 } });
+  await expect(pressed()).toHaveCount(1);
+  await hand.nth(5).click({ position: { x: 6, y: 20 } });
+  await expect(pressed()).toHaveCount(0);
+  // 键盘：Tab 到牌上按空格/回车切换（读屏工具的点击走同一条路）
+  await hand.nth(2).focus();
+  await page.keyboard.press(' ');
+  await expect(hand.nth(2)).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Enter');
+  await expect(pressed()).toHaveCount(0);
+
   await playUntilEnd(page);
   await expect(page.locator('.result')).toContainText(/地主|农民/);
   await page.getByRole('button', { name: '再来一局' }).click();

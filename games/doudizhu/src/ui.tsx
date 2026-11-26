@@ -107,11 +107,9 @@ export function Board(props: TurnUIProps<View, Action>) {
   useEffect(() => setHintIdx(0), [trickKey]);
   const hintList = useMemo(() => (myTurn ? hints(v) : []), [myTurn, trickKey, handKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const toggle = (id: string) => {
+  // 单击切换一张，按住左键（手机上用手指）横着拖过一段批量选/取消，见 kit-cards 的 Hand
+  const choose = (next: Set<string>) => {
     if (seat === null) return;
-    const next = new Set(selected);
-    if (next.has(id)) next.delete(id);
-    else next.add(id);
     setSelected(next);
   };
   const play = () => act({ type: 'play', cards: v.hand.filter((c) => selected.has(c)) });
@@ -221,7 +219,7 @@ export function Board(props: TurnUIProps<View, Action>) {
                 )}
                 <span className={styles.dim}>{v.hand.length} 张</span>
               </div>
-              <Hand cards={v.hand.map(faceOf)} selected={selected} onToggle={toggle} />
+              <Hand cards={v.hand.map(faceOf)} selected={selected} onChange={choose} />
             </>
           ) : (
             <div className={styles.dim}>旁观中 · 座位 1 剩 {v.counts[0]} 张</div>

@@ -21,20 +21,27 @@ export interface CardProps {
   face: CardFace;
   selected?: boolean;
   small?: boolean;
-  onClick?: () => void;
+  /** 可以选（点击/拖拽由外面的 Hand 统一处理） */
+  interactive?: boolean;
 }
 
-export function Card({ face, selected, small, onClick }: CardProps) {
+export function Card({ face, selected, small, interactive }: CardProps) {
   const joker = face.suit === 'JB' || face.suit === 'JR';
   const cls = [
     styles.card,
     isRed(face.suit) ? styles.red : styles.black,
     selected ? styles.selected : '',
     small ? styles.small : '',
-    onClick ? styles.clickable : '',
+    interactive ? styles.clickable : '',
   ].join(' ');
   return (
-    <div className={cls} onClick={onClick} data-card={face.id} role={onClick ? 'button' : undefined}>
+    <div
+      className={cls}
+      data-card={face.id}
+      role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
+      aria-pressed={interactive ? !!selected : undefined}
+    >
       {joker ? (
         <div className={styles.joker}>
           <span>{face.suit === 'JR' ? '大' : '小'}</span>
