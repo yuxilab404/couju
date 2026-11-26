@@ -139,13 +139,14 @@ label > input, label > select { color: var(--text); font-size: 15px; }
 
 .playing { position: relative; display: flex; flex-direction: column; gap: 8px; }
 .board { border-radius: var(--radius); overflow: hidden; }
-/* 不加遮罩、不拦点击：牌桌上摊开的牌照样看得见，弹窗本身按住标题能拖走 */
+/* 不加遮罩、不拦点击：牌桌上摊开的牌照样看得见，弹窗本身按住标题能拖走。
+   按屏幕居中（fixed），牌桌比屏幕高时弹窗也整个在屏幕里 */
 .result-overlay {
-  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  position: fixed; inset: 0; display: flex; align-items: center; justify-content: center;
   padding: 16px; z-index: 5; pointer-events: none;
   animation: rise 0.35s cubic-bezier(.2, .8, .3, 1) backwards;
 }
-.result-overlay > .result { pointer-events: auto; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); }
+.result-overlay > .result { pointer-events: auto; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); max-height: calc(100dvh - 32px); overflow-y: auto; }
 .drag-handle { margin: 0; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
 .drag-handle:active { cursor: grabbing; }
 .result { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 8px; }
