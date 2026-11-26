@@ -125,10 +125,14 @@ label > input, label > select { color: var(--text); font-size: 15px; }
 
 .playing { position: relative; display: flex; flex-direction: column; gap: 8px; }
 .board { border-radius: var(--radius); overflow: hidden; }
+/* 不加遮罩、不拦点击：牌桌上摊开的牌照样看得见，弹窗本身按住标题能拖走 */
 .result-overlay {
   position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
-  background: rgba(0, 0, 0, 0.35); border-radius: var(--radius); padding: 16px; z-index: 5;
+  padding: 16px; z-index: 5; pointer-events: none;
 }
+.result-overlay > .result { pointer-events: auto; box-shadow: 0 8px 28px rgba(0, 0, 0, 0.35); }
+.drag-handle { margin: 0; cursor: grab; user-select: none; -webkit-user-select: none; touch-action: none; }
+.drag-handle:active { cursor: grabbing; }
 .result { width: 100%; max-width: 420px; display: flex; flex-direction: column; gap: 8px; }
 .wl td:first-child { word-break: break-all; }
 

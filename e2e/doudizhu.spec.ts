@@ -78,6 +78,19 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
 
   await playUntilEnd(page);
   await expect(page.locator('.result')).toContainText(/地主|农民/);
+  // 两个对手剩下的牌摊在牌桌上
+  await expect(page.locator('[data-leftover]')).toHaveCount(2);
+  // 结算弹窗按住标题能拖走，不挡牌桌
+  const dialog = page.getByRole('dialog', { name: '本局结束' });
+  const before = (await dialog.boundingBox())!;
+  const title = (await page.getByRole('heading', { name: '本局结束' }).boundingBox())!;
+  await page.mouse.move(title.x + 20, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(title.x + 20 + 200, title.y + title.height / 2 + 150, { steps: 5 });
+  await page.mouse.up();
+  const after = (await dialog.boundingBox())!;
+  expect(Math.round(after.x - before.x)).toBe(200);
+  expect(Math.round(after.y - before.y)).toBe(150);
   await page.getByRole('button', { name: '再来一局' }).click();
   await expect(page.getByRole('heading', { name: '本局结束' })).toBeHidden();
   await expect(page.getByText('本房间累计').or(page.locator('[class*=board]'))).toBeVisible();

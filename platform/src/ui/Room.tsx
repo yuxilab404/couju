@@ -1,5 +1,5 @@
 /** 房间页：等人（选游戏、规则、座位）→ 对局（游戏画面）→ 结算。 */
-import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type PointerEvent, type ReactNode } from 'react';
 import type { Member } from '@couju/protocol';
 import type { AnyGameDef, SeatInfo, TurnGameDef } from '@couju/sdk';
 import { findGame } from '../registry.ts';
@@ -300,38 +300,93 @@ function Playing({ st, session, def }: { st: RoomState; session: RoomSession; de
         />
       </div>
       {ended && game.result && (
-        <div className="result-overlay">
-          <div className="card result">
-            <h3>本局结束</h3>
-            <p>{game.result.summary}</p>
-            {game.result.scores && (
-              <table>
-                <tbody>
-                  {seats.map((s) => (
-                    <tr key={s.seat} className={game.result!.winners.includes(s.seat) ? 'win' : ''}>
-                      <td>{s.name}</td>
-                      <td className="num">{fmt(game.result!.scores![s.seat])}</td>
-                      <td className="num muted">累计 {fmt(room.scoreboard[scoreKey(room.seats[s.seat], s.seat)] ?? 0)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+        <DraggableResult>
+          <h3 className="drag-handle" data-drag-handle title="按住拖到别处">
+            本局结束 <span className="muted small">（可拖动）</span>
+          </h3>
+          <p>{game.result.summary}</p>
+          {game.result.scores && (
+            <table>
+              <tbody>
+                {seats.map((s) => (
+                  <tr key={s.seat} className={game.result!.winners.includes(s.seat) ? 'win' : ''}>
+                    <td>{s.name}</td>
+                    <td className="num">{fmt(game.result!.scores![s.seat])}</td>
+                    <td className="num muted">累计 {fmt(room.scoreboard[scoreKey(room.seats[s.seat], s.seat)] ?? 0)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="row">
+            {st.amHost && session.engine ? (
+              <>
+                <button className="primary" onClick={() => session.engine!.rematch()}>
+                  再来一局
+                </button>
+                <button onClick={() => session.engine!.backToRoom()}>回到房间（换人/换游戏）</button>
+              </>
+            ) : (
+              <span className="muted">等房主决定下一局…</span>
             )}
-            <div className="row">
-              {st.amHost && session.engine ? (
-                <>
-                  <button className="primary" onClick={() => session.engine!.rematch()}>
-                    再来一局
-                  </button>
-                  <button onClick={() => session.engine!.backToRoom()}>回到房间（换人/换游戏）</button>
-                </>
-              ) : (
-                <span className="muted">等房主决定下一局…</span>
-              )}
-            </div>
           </div>
-        </div>
+        </DraggableResult>
       )}
+    </div>
+  );
+}
+
+/**
+ * 结算弹窗：不加遮罩，按住标题拖到别处，免得挡住牌桌上摊开的牌。
+ * 位移只在这个组件里，下一局重新出现时回到中间。
+ */
+function DraggableResult({ children }: { children: ReactNode }) {
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ id: number; x: number; y: number; ox: number; oy: number } | null>(null);
+  const box = useRef<HTMLDivElement>(null);
+
+  const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
+    if (!(e.target as HTMLElement).closest('[data-drag-handle]')) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return;
+    e.preventDefault();
+    e.currentTarget.setPointerCapture?.(e.pointerId);
+    drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+  };
+  const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
+    const d = drag.current;
+    if (!d || d.id !== e.pointerId) return;
+    let x = d.ox + e.clientX - d.x;
+    let y = d.oy + e.clientY - d.y;
+    // 至少留一截标题在屏幕里，拖出去也能拖回来
+    const r = box.current?.getBoundingClientRect();
+    if (r) {
+      const keep = 48;
+      const left = r.left - offset.x + x;
+      const top = r.top - offset.y + y;
+      x += Math.max(0, keep - (left + r.width)) - Math.max(0, left - (innerWidth - keep));
+      y += Math.max(0, -top) - Math.max(0, top - (innerHeight - keep));
+    }
+    setOffset({ x, y });
+  };
+  const onPointerUp = (e: PointerEvent<HTMLDivElement>) => {
+    if (drag.current?.id === e.pointerId) drag.current = null;
+  };
+
+  return (
+    <div className="result-overlay">
+      <div
+        ref={box}
+        className="card result"
+        role="dialog"
+        aria-label="本局结束"
+        style={{ transform: `translate(${offset.x}px, ${offset.y}px)` }}
+        onPointerDown={onPointerDown}
+        onPointerMove={onPointerMove}
+        onPointerUp={onPointerUp}
+        onPointerCancel={onPointerUp}
+      >
+        {children}
+      </div>
     </div>
   );
 }

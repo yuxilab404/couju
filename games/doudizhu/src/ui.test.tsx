@@ -27,4 +27,12 @@ it('各阶段都能渲染', () => {
   const html = render(0);
   expect(html).toMatch(/你赢了|你输了/);
   expect(render(null)).toContain('旁观');
+
+  // 打完后牌桌上摊开每个人剩下的牌：两个对手在座位上，旁观者连座位 1 也看得到
+  const leftovers = (h: string) => [...h.matchAll(/data-leftover="(\d)"/g)].map((m) => Number(m[1])).sort();
+  expect(leftovers(html)).toEqual([1, 2]);
+  expect(leftovers(render(null))).toEqual([0, 1, 2]);
+  for (const seat of [0, 1, 2]) {
+    for (const c of s.hands[seat]) expect(render(null)).toContain(`data-card="${c}"`);
+  }
 });
