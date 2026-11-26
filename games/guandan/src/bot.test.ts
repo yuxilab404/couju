@@ -41,6 +41,13 @@ describe('跟牌', () => {
     expect(a.type).toBe('play');
     if (a.type === 'play') expect(isBomb(interpret(a.cards, 2, null, a.as)!)).toBe(true);
   });
+  it('配牌能把炸弹加大：四张 9 + 两张配牌压五张炸弹，一手走完', () => {
+    const v = viewOf(['9 9 9 9 h2 h2', '3 3', '3 4', '5 6'], { lastPlay: prevBy(1, '8 8 8 8 8') });
+    const a = decide(v);
+    expect(a).toMatchObject({ type: 'play', as: { kind: 'bomb', main: 9 } });
+    if (a.type === 'play') expect(a.cards).toHaveLength(6);
+    expect(hints(v)).not.toHaveLength(0);
+  });
   it('列出的出法都压得过', () => {
     const prev = prevBy(1, '3 4 5 6 7');
     for (const m of beatsOf(hand('h2 5 6 7 8 9 10 Q Q Q Q'), 2, prev)) {

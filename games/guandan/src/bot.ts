@@ -260,32 +260,43 @@ export function beatsOf(hand: readonly string[], level: number, prev: Pattern): 
     default:
       break;
   }
-  out.push(...bombsOf(hand, level).filter((m) => beats(m.p, prev)));
+  out.push(...bombsOf(hand, level, prev));
   return out;
 }
 
-/** 手里能组成的炸弹：每个点数取最小的一个、同花顺、天王炸 */
-export function bombsOf(hand: readonly string[], level: number): Move[] {
+/**
+ * 手里能组成的、压得过 prev 的炸弹（prev 为 null 时不限）：
+ * 每个点数取压得过的最小张数（不拆开同点数的真牌，不够再加配牌）和加满配牌的最大张数、同花顺、天王炸。
+ */
+export function bombsOf(hand: readonly string[], level: number, prev: Pattern | null = null): Move[] {
   const cnt = countNatural(hand, level);
   const w = wildsOf(hand, level).length;
   const out: Move[] = [];
   for (let r = 2; r <= 14; r++) {
-    if (cnt[r] === 0 || cnt[r] + w < 4) continue;
-    const size = Math.max(4, cnt[r]);
-    const cards = takeCards(hand, level, [[r, size]]);
-    const m = moveOf(cards, level, { kind: 'bomb', main: valueOfRank(r, level), size }, null);
-    if (m) out.push(m);
+    if (cnt[r] === 0) continue;
+    const bomb = (size: number) =>
+      moveOf(takeCards(hand, level, [[r, size]]), level, { kind: 'bomb', main: valueOfRank(r, level), size }, prev);
+    let smallest = 0;
+    for (let size = Math.max(4, cnt[r]); size <= cnt[r] + w && !smallest; size++) {
+      const m = bomb(size);
+      if (m) {
+        out.push(m);
+        smallest = size;
+      }
+    }
+    // 把配牌全加上的最大那个也列出来：可能正好一手走完
+    if (smallest && smallest < cnt[r] + w) out.push(bomb(cnt[r] + w)!);
   }
   for (const suit of SUITS) {
     for (let s = 1; s <= 10; s++) {
       const reqs = Array.from({ length: 5 }, (_, i) => [rankAt(s + i), 1] as [number, number]);
-      const m = moveOf(takeCards(hand, level, reqs, suit), level, { kind: 'straightFlush', main: s + 4, size: 5 }, null);
+      const m = moveOf(takeCards(hand, level, reqs, suit), level, { kind: 'straightFlush', main: s + 4, size: 5 }, prev);
       if (m) out.push(m);
     }
   }
   if (cnt[16] === 2 && cnt[17] === 2) {
-    const cards = hand.filter((id) => rankOf(id) >= 16);
-    out.push({ cards, as: { kind: 'jokerBomb', main: 17 }, p: { kind: 'jokerBomb', main: 17, size: 4 } });
+    const m = moveOf(hand.filter((id) => rankOf(id) >= 16), level, { kind: 'jokerBomb', main: 17, size: 4 }, prev);
+    if (m) out.push(m);
   }
   return out;
 }

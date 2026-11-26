@@ -170,9 +170,13 @@ export function interpret(
   return ps.slice().sort((a, b) => strength(b) - strength(a))[0];
 }
 
-/** 给人看的一句话："顺子 10–A"、"炸弹 6 张 8"、"三带二 7" */
-export function describe(p: Pattern): string {
-  const label = (r: number) => (r === 15 ? '级牌' : r === 16 ? '小王' : r === 17 ? '大王' : r === 1 ? 'A' : RANK_SHORT[r]);
+/**
+ * 给人看的一句话："顺子 10–A"、"6 张炸弹 8"、"三带二 7"。
+ * 给了 level 时，级牌（主值 15）写成它的点数，比如打 5 时的"对子 5"。
+ */
+export function describe(p: Pattern, level?: number): string {
+  const label = (r: number) =>
+    r === 15 ? (level ? RANK_SHORT[level] : '级牌') : r === 16 ? '小王' : r === 17 ? '大王' : r === 1 ? 'A' : RANK_SHORT[r];
   switch (p.kind) {
     case 'straight':
     case 'straightFlush':
@@ -182,11 +186,11 @@ export function describe(p: Pattern): string {
     case 'plate':
       return `钢板 ${label(p.main - 1)}–${label(p.main)}`;
     case 'bomb':
-      return `${p.size} 张炸弹`;
+      return `${p.size} 张炸弹 ${label(p.main)}`;
     case 'jokerBomb':
       return '天王炸';
     default:
-      return KIND_NAME[p.kind];
+      return `${KIND_NAME[p.kind]} ${label(p.main)}`;
   }
 }
 

@@ -40,10 +40,22 @@ function Avatar({ info }: { info: SeatInfo | undefined }) {
   );
 }
 
-function RecentPlay({ recent, level }: { recent: Recent; level: number }) {
+/** 座位最近的一手；如果它是现在要压的那一手，写出它算作什么（配牌出的牌光看牌面认不出来） */
+function RecentPlay({ v, seat }: { v: View; seat: Seat }) {
+  const recent: Recent = v.phase === 'playing' ? v.recent[seat] : null;
   if (recent === 'pass') return <div className={styles.pass}>不出</div>;
   if (!recent) return null;
-  return <Hand small cards={sortCards(recent, level).map((c) => faceOf(c, level))} />;
+  const current = v.lastPlay && v.lastPlay.seat === seat ? v.lastPlay : null;
+  return (
+    <>
+      <Hand small cards={sortCards(recent, v.level).map((c) => faceOf(c, v.level))} />
+      {current && (
+        <div className={styles.declared} data-declared={seat}>
+          {describe(current, v.level)}
+        </div>
+      )}
+    </>
+  );
 }
 
 function TeamDot({ seat }: { seat: Seat }) {
@@ -103,7 +115,7 @@ function SeatPanel(props: { v: View; seat: Seat; info: SeatInfo | undefined; sec
         </div>
       </div>
       <div className={styles.played}>
-        <RecentPlay recent={v.phase === 'playing' ? v.recent[seat] : null} level={v.level} />
+        <RecentPlay v={v} seat={seat} />
         <Leftover v={v} seat={seat} />
       </div>
     </div>
@@ -319,7 +331,7 @@ export function Board(props: TurnUIProps<View, Action>) {
 
       <div className={styles.mine}>
         <div className={styles.myPlayed}>
-          <RecentPlay recent={v.phase === 'playing' ? v.recent[me] : null} level={v.level} />
+          <RecentPlay v={v} seat={me} />
         </div>
 
         {result && (
@@ -375,7 +387,7 @@ export function Board(props: TurnUIProps<View, Action>) {
             </button>
             {alternatives.map((p) => (
               <button key={`${p.kind}${p.main}`} className={styles.alt} onClick={() => play({ kind: p.kind, main: p.main })}>
-                当{describe(p)}出
+                当{describe(p, v.level)}出
               </button>
             ))}
           </div>

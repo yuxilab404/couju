@@ -226,3 +226,7 @@
   .opponents .name, .opponents .tags { justify-content: center; }
   .opponents .played, .opponents .revealed { align-items: center; justify-content: center; }
 }
+
+/* 现在要压的那一手算作什么：配牌出的牌光看牌面认不出 */
+.declared { font-size: 12px; background: rgba(0, 0, 0, 0.35); border-radius: 8px; padding: 0 6px; width: fit-content; max-width: 100%; }
+.myPlayed { flex-direction: column; align-items: center; }
