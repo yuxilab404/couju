@@ -74,6 +74,8 @@ export class HostEngine {
   private members = new Map<UserId, Member>();
   private offlineTimers = new Map<UserId, ReturnType<typeof setTimeout>>();
   private timer: TimerState | null = null;
+  /** 当前局面第一次被安排的时刻，算 pause 剩多少用 */
+  private stateAt: { game: LiveGame | null; seq: number; at: number } = { game: null, seq: -1, at: 0 };
   private bots = new Map<Seat, AbortController>();
   private dirty = false;
   private disposed = false;
@@ -91,7 +93,7 @@ export class HostEngine {
     checkpoint: Checkpoint | null,
     opts: HostOptions = {},
   ) {
-    this.botDelay = opts.botDelayMs ?? [500, 1100];
+    this.botDelay = opts.botDelayMs ?? [800, 1500];
     this.hostedAfterMs = opts.hostedAfterMs ?? 30_000;
     this.random = opts.random ?? Math.random;
     this.freeze = opts.freeze ?? false;
@@ -480,15 +482,33 @@ export class HostEngine {
       this.timer = null;
       if (t) {
         const seq = g.env.seq;
+        const ms = t.ms + this.pauseMs();
         this.timer = {
           seq,
           key: t.key,
           seats: t.seats,
-          deadline: Date.now() + t.ms,
-          handle: setTimeout(() => this.onTimeout(), t.ms),
+          deadline: Date.now() + ms,
+          handle: setTimeout(() => this.onTimeout(), ms),
         };
       }
     }
+  }
+
+  /** 当前局面游戏要求的停顿（TurnRules.pause），从这个局面出现时算起 */
+  private pauseMs(): number {
+    const g = this.game;
+    if (!g?.def.turn.pause) return 0;
+    let ms = 0;
+    try {
+      ms = Number(g.def.turn.pause(g.env.state)) || 0;
+    } catch {
+      ms = 0;
+    }
+    const full = Math.max(0, Math.min(10_000, ms));
+    // 同一个局面里重新安排（成员变化、托管切换）时只停剩下的部分
+    const now = Date.now();
+    if (this.stateAt.game !== g || this.stateAt.seq !== g.env.seq) this.stateAt = { game: g, seq: g.env.seq, at: now };
+    return Math.max(0, full - (now - this.stateAt.at));
   }
 
   private onTimeout(): void {
@@ -513,7 +533,8 @@ export class HostEngine {
     const ctl = new AbortController();
     this.bots.set(seat, ctl);
     const [lo, hi] = this.botDelay;
-    const delay = immediate ? 0 : lo + this.random() * (hi - lo);
+    // 局面刚变时游戏要求停一会儿（让人看清翻牌之类），停完再"思考"
+    const delay = immediate ? 0 : this.pauseMs() + lo + this.random() * (hi - lo);
     const view = JSON.parse(JSON.stringify(g.def.view(g.env.state, seat)));
     const rng = SeededRng.fromSeed(Math.floor(this.random() * 2 ** 32));
 
@@ -581,6 +602,7 @@ export class HostEngine {
       timer: t ? { seats: t.seats, remainingMs: Math.max(0, t.deadline - Date.now()) } : null,
       result: g.result,
       rating: this.ratingStatus(),
+      pauseMs: this.pauseMs(),
     };
   }
 

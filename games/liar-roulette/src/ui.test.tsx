@@ -34,3 +34,22 @@ it('3–5 人从开局到结束都能渲染', () => {
     expect(render(0)).toContain('出局');
   }
 });
+
+it('决出胜负的那一翻也算"刚翻完"：牌桌内的结算等翻牌动画放完', async () => {
+  const { revealJustHappened } = await import('./ui.tsx');
+  const rng = SeededRng.fromSeed(7);
+  let s = setup({ numPlayers: 3, rng });
+  let sawMid = false;
+  while (s.phase !== 'ended') {
+    s = apply(s, s.turn, decide(view(s, s.turn), rng), { rng });
+    const v = view(s, 0);
+    if (s.phase === 'playing' && v.showdowns.length > 0 && v.claims.length === 0) {
+      expect(revealJustHappened(v)).toBe(true);
+      sawMid = true;
+    }
+    if (s.phase === 'playing' && v.claims.length > 0) expect(revealJustHappened(v)).toBe(false);
+  }
+  expect(sawMid).toBe(true);
+  expect(view(s, 0).claims.length).toBeGreaterThan(0);
+  expect(revealJustHappened(view(s, 0))).toBe(true);
+});

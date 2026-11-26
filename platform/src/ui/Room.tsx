@@ -283,20 +283,37 @@ function SlotView({ slot, member, seat }: { slot: SeatSlot; member: Member | und
   );
 }
 
+/** 到了本机时刻 at 才返回 true */
+function useReached(at: number): boolean {
+  const [reached, setReached] = useState(() => Date.now() >= at);
+  useEffect(() => {
+    const left = at - Date.now();
+    setReached(left <= 0);
+    if (left <= 0) return;
+    const t = setTimeout(() => setReached(true), left);
+    return () => clearTimeout(t);
+  }, [at]);
+  return reached;
+}
+
 function Playing({ st, session, def }: { st: RoomState; session: RoomSession; def: AnyGameDef }) {
   const room = st.room!;
   const game = st.game;
+  const settled = useReached(game?.settleAt ?? 0);
   const seats = seatInfos(room, st.members, def);
   if (!game) return <div className="card muted">等待房主同步…</div>;
   if (def.mode !== 'turn') return <div className="card">实时游戏还没有实现</div>;
   const Ui = (def as TurnGameDef<unknown, unknown, unknown, unknown>).ui;
-  const ended = room.phase === 'ended';
+  // 最后一下的动画（比如翻牌、枪响）放完再弹结算
+  const ended = room.phase === 'ended' && settled;
   return (
     <div className="playing">
       {game.seat === null && <div className="notice">你在旁观这一局</div>}
       {st.error && <div className="notice error">{st.error}</div>}
       <div className="board">
+        {/* 每局换一个 key：新开一局画面从头挂载，发牌之类的入场动画重新放 */}
         <Ui
+          key={room.round}
           view={game.view}
           seat={game.seat}
           seats={seats}

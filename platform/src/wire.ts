@@ -38,6 +38,8 @@ export interface GamePublic {
   timer: { seats: Seat[]; remainingMs: number } | null;
   result: Result | null;
   rating: RatingStatus;
+  /** 这个局面还要停多少毫秒（TurnRules.pause 剩下的部分）；结算弹窗等它停完再出来。旧版本房主不发 */
+  pauseMs?: number;
 }
 
 /** 这局的账号积分：null = 不计分；'pending' = 已结束、等服务端记分；否则是服务端回的结果 */

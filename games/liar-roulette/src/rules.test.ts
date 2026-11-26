@@ -1,7 +1,7 @@
 import { SeededRng } from '@couju/sdk';
 import { describe, expect, it } from 'vitest';
 import { makeDeck, matchingTotal } from './cards.ts';
-import { apply, mustCallLiar, result, setup, validate, view, type State } from './rules.ts';
+import { apply, mustCallLiar, pause, result, setup, showdownTimeline, validate, view, type State } from './rules.ts';
 
 const rng = () => SeededRng.fromSeed(7);
 
@@ -127,5 +127,21 @@ describe('视图', () => {
     expect(v1.claims).toEqual([{ seat: 0, count: 2 }]);
     expect(view(s, 0).myPlays).toEqual([['K1', 'Q1']]);
     expect(view(s, null).hand).toEqual([]);
+  });
+});
+
+describe('节奏', () => {
+  it('刚翻完牌停到动画放完；新一轮有人出过牌就不停', () => {
+    let s = table([['K1', 'K2', 'K3', 'K4', 'K5'], ['Q1', 'Q2', 'Q3', 'Q4', 'Q5'], ['A1', 'A2', 'A3', 'A4', 'A5']]);
+    expect(pause(s)).toBe(0);
+    s = apply(s, 0, { type: 'play', cards: ['K1', 'K2'] }, { rng: rng() });
+    expect(pause(s)).toBe(0);
+    s = apply(s, 1, { type: 'liar' }, { rng: rng() });
+    expect(pause(s)).toBe(showdownTimeline(2).end);
+    expect(showdownTimeline(3).end).toBeGreaterThan(showdownTimeline(1).end);
+    if (s.phase === 'playing') {
+      s = apply(s, s.turn, { type: 'play', cards: [s.hands[s.turn][0]] }, { rng: rng() });
+      expect(pause(s)).toBe(0);
+    }
   });
 });

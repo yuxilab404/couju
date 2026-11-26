@@ -7,6 +7,7 @@ import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type 
 import { Card, type CardFace } from './Card.tsx';
 import { DragController, dragSelection, indexAtX } from './dragSelect.ts';
 import styles from './cards.module.css';
+import { motion } from './motion.tsx';
 
 export interface HandProps {
   cards: CardFace[];
@@ -14,9 +15,11 @@ export interface HandProps {
   /** 选牌结果（整组替换）；不给就只展示、不能选 */
   onChange?: (next: Set<string>) => void;
   small?: boolean;
+  /** 新到手的牌依次落下（发牌、拿底牌）；已经在手里的牌不动 */
+  deal?: boolean;
 }
 
-export function Hand({ cards, selected, onChange, small }: HandProps) {
+export function Hand({ cards, selected, onChange, small, deal }: HandProps) {
   const ref = useRef<HTMLDivElement>(null);
   const ctl = useRef(new DragController());
   const pointerId = useRef<number | null>(null);
@@ -109,7 +112,12 @@ export function Hand({ cards, selected, onChange, small }: HandProps) {
       onKeyDown={onKeyDown}
     >
       {cards.map((c, i) => (
-        <div key={c.id} className={styles.slot} data-idx={i}>
+        <div
+          key={c.id}
+          className={[styles.slot, deal ? motion.dealIn : ''].join(' ')}
+          style={deal ? { ['--i' as string]: i } : undefined}
+          data-idx={i}
+        >
           <Card face={c} small={small} selected={shown.has(c.id)} interactive={interactive} />
         </div>
       ))}

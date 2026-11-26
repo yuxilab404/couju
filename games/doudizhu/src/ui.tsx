@@ -1,7 +1,7 @@
 /** 斗地主牌桌画面 */
-import { CardBack, Hand } from '@couju/kit-cards';
+import { CardBack, FlipCard, FlyIn, Hand, lastPlayIndex, motion } from '@couju/kit-cards';
 import type { Seat, SeatInfo, TurnUIProps } from '@couju/sdk';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { hints } from './bot.ts';
 import { faceOf, RANK_LABEL, sortCards } from './cards.ts';
 import { COUNTER_RANKS, outstanding } from './counter.ts';
@@ -47,6 +47,15 @@ function RecentPlay({ recent }: { recent: Recent }) {
   return <Hand small cards={sortCards(recent).map(faceOf)} />;
 }
 
+/** 座位最近一手：每出一手从 from（头像或我的手牌）飞到出牌区 */
+function FlyingPlay({ v, seat, from }: { v: View; seat: Seat; from: () => Element | null }) {
+  return (
+    <FlyIn k={lastPlayIndex(v.history, seat)} from={from} className={styles.flying}>
+      <RecentPlay recent={v.recent[seat]} />
+    </FlyIn>
+  );
+}
+
 /** 一局结束后摊开这个座位手里剩下的牌 */
 function Leftover({ v, seat }: { v: View; seat: Seat }) {
   const left = v.revealed?.[seat];
@@ -75,9 +84,10 @@ function SeatPanel(props: {
   const { v, seat, info, secondsLeft, side } = props;
   const isTurn = v.phase !== 'ended' && v.turn === seat;
   const bid = v.phase === 'bidding' ? bidText(v, seat) : null;
+  const who = useRef<HTMLDivElement>(null);
   return (
-    <div className={[styles.seat, styles[side], isTurn ? styles.turn : ''].join(' ')} data-seat={seat}>
-      <div className={styles.who}>
+    <div className={[styles.seat, styles[side], isTurn ? styles.turn : '', isTurn ? motion.breathe : ''].join(' ')} data-seat={seat}>
+      <div className={styles.who} ref={who}>
         <Avatar info={info} />
         <div className={styles.meta}>
           <div className={styles.name}>
@@ -93,7 +103,9 @@ function SeatPanel(props: {
               <span className={styles.miniBack} />
               {v.counts[seat]}
             </span>
-            {isTurn && secondsLeft !== null && <span className={styles.clock}>{secondsLeft}</span>}
+            {isTurn && secondsLeft !== null && (
+              <span className={[styles.clock, secondsLeft <= 5 ? motion.hurry : ''].join(' ')}>{secondsLeft}</span>
+            )}
             {info?.kind === 'bot' && <span className={styles.tag}>电脑</span>}
             {info?.hosted && <span className={styles.tag}>托管中</span>}
             {info && !info.connected && info.kind === 'human' && <span className={styles.tag}>掉线</span>}
@@ -101,7 +113,7 @@ function SeatPanel(props: {
         </div>
       </div>
       <div className={styles.played}>
-        {bid ? <div className={styles.pass}>{bid}</div> : <RecentPlay recent={v.recent[seat]} />}
+        {bid ? <div className={styles.pass}>{bid}</div> : <FlyingPlay v={v} seat={seat} from={() => who.current} />}
         <Leftover v={v} seat={seat} />
       </div>
     </div>
@@ -118,6 +130,9 @@ export function Board(props: TurnUIProps<View, Action>) {
   const secondsLeft = timer ? Math.max(0, Math.ceil((timer.deadline - now) / 1000)) : null;
   const myTurn = seat !== null && v.phase !== 'ended' && v.turn === seat;
   const canAct = myTurn && !pending;
+  const handRef = useRef<HTMLDivElement>(null);
+  // 底牌：叫完地主那一刻翻开（中途进来的直接显示）
+  const bottomAtMount = useRef(v.bottom !== null);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hintIdx, setHintIdx] = useState(0);
@@ -157,7 +172,15 @@ export function Board(props: TurnUIProps<View, Action>) {
       <div className={styles.top}>
         <div className={styles.bottomCards}>
           {v.bottom ? (
-            <Hand small cards={v.bottom.map(faceOf)} />
+            bottomAtMount.current ? (
+              <Hand small cards={v.bottom.map(faceOf)} />
+            ) : (
+              <div className={styles.backs}>
+                {v.bottom.map((c, i) => (
+                  <FlipCard key={c} face={faceOf(c)} small delayMs={i * 150} />
+                ))}
+              </div>
+            )
           ) : (
             <div className={styles.backs}>
               <CardBack small />
@@ -185,7 +208,7 @@ export function Board(props: TurnUIProps<View, Action>) {
           {v.phase === 'bidding' ? (
             bidText(v, me) && <div className={styles.pass}>{bidText(v, me)}</div>
           ) : (
-            <RecentPlay recent={v.recent[me]} />
+            <FlyingPlay v={v} seat={me} from={() => handRef.current} />
           )}
         </div>
 
@@ -233,7 +256,7 @@ export function Board(props: TurnUIProps<View, Action>) {
           </div>
         )}
 
-        <div className={[styles.myHand, myTurn ? styles.turnGlow : ''].join(' ')}>
+        <div ref={handRef} className={[styles.myHand, myTurn ? styles.turnGlow : ''].join(' ')}>
           {seat !== null ? (
             <>
               <div className={styles.myTag}>
@@ -246,7 +269,7 @@ export function Board(props: TurnUIProps<View, Action>) {
                 )}
                 <span className={styles.dim}>{v.hand.length} 张</span>
               </div>
-              <Hand cards={v.hand.map(faceOf)} selected={selected} onChange={choose} />
+              <Hand key={v.redeals} deal cards={v.hand.map(faceOf)} selected={selected} onChange={choose} />
             </>
           ) : v.revealed ? (
             <>
