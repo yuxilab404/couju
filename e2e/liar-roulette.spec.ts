@@ -28,7 +28,9 @@ test('唬牌：一个人 + 三个机器人打到只剩一个活人', async ({ pa
   const liar = page.getByRole('button', { name: '骗子！' });
   const primary = page.getByRole('button', { name: /张出|^出 \d 张/ });
   const pressed = page.locator('[data-card][aria-pressed="true"]');
-  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+  // 按时间而不是按轮数兜底：bot 有思考延迟、唬牌翻牌要停 3 秒多（ADR-0008），一局的长短看运气
+  const until = Date.now() + 240_000;
+  for (let i = 0; Date.now() < until && !(await result.isVisible()); i++) {
     const canLiar = await liar.isVisible();
     const canPlay = await primary.isVisible();
     if (canLiar && (!canPlay || called < played)) {

@@ -33,7 +33,9 @@ test('掼蛋：一个人 + 三个机器人打完一副', async ({ page }) => {
   const result = page.getByRole('heading', { name: '本局结束' });
   const play = page.getByRole('button', { name: '出牌' });
   let played = 0;
-  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+  // 按时间而不是按轮数兜底：bot 有思考延迟、唬牌翻牌要停 3 秒多（ADR-0008），一局的长短看运气
+  const until = Date.now() + 240_000;
+  for (let i = 0; Date.now() < until && !(await result.isVisible()); i++) {
     if (await play.isVisible()) {
       const hint = page.getByRole('button', { name: '提示' });
       if (await hint.isEnabled()) {
