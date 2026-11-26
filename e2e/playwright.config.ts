@@ -12,6 +12,8 @@ export default defineConfig({
   timeout: 120_000,
   fullyParallel: false,
   workers: 1,
+  // CI 上另出一份 HTML 报告传成 artifact：手机端每一屏的截图都在里面，PR 审查时点开就能看
+  reporter: process.env.CI ? [['list'], ['html', { open: 'never', outputFolder: '../playwright-report' }]] : 'list',
   // 和线上一样挂在子路径 /game/ 下跑，同时验证子路径部署
   use: { baseURL: `http://127.0.0.1:${port}/game/` },
   // 平台要求手机和电脑都能玩（AGENTS.md）：桌面跑全部流程，手机按一大一小两种竖屏用触屏再跑一遍
