@@ -1,0 +1,29 @@
+import { defineTurnGame } from '@couju/sdk';
+import { bot } from './bot.ts';
+import * as rules from './rules.ts';
+import type { Action, State, View } from './rules.ts';
+import { Board } from './ui.tsx';
+
+export type { Action, State, View } from './rules.ts';
+
+const liarRoulette = defineTurnGame<State, Action, View>({
+  id: 'liar-roulette',
+  version: 1,
+  name: '吹牛轮盘',
+  mode: 'turn',
+  players: { min: 3, max: 5 },
+  setup: ({ numPlayers, rng }) => rules.setup({ numPlayers, rng }),
+  turn: {
+    active: rules.active,
+    validate: rules.validate,
+    apply: rules.apply,
+    timer: rules.timer,
+  },
+  view: rules.view,
+  result: rules.result,
+  privateTokens: rules.privateTokens,
+  bot,
+  ui: Board,
+});
+
+export default liarRoulette;
