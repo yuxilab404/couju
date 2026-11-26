@@ -69,6 +69,12 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
   await expect(pressed()).toHaveCount(1);
   await hand.nth(5).click({ position: { x: 6, y: 20 } });
   await expect(pressed()).toHaveCount(0);
+  // 键盘：Tab 到牌上按空格/回车切换（读屏工具的点击走同一条路）
+  await hand.nth(2).focus();
+  await page.keyboard.press(' ');
+  await expect(hand.nth(2)).toHaveAttribute('aria-pressed', 'true');
+  await page.keyboard.press('Enter');
+  await expect(pressed()).toHaveCount(0);
 
   await playUntilEnd(page);
   await expect(page.locator('.result')).toContainText(/地主|农民/);

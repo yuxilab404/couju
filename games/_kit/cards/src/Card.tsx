@@ -39,6 +39,7 @@ export function Card({ face, selected, small, interactive }: CardProps) {
       className={cls}
       data-card={face.id}
       role={interactive ? 'button' : undefined}
+      tabIndex={interactive ? 0 : undefined}
       aria-pressed={interactive ? !!selected : undefined}
     >
       {joker ? (

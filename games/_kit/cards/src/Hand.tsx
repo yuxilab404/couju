@@ -1,10 +1,11 @@
 /**
  * 一排牌，张数多时自动重叠，手机竖屏也放得下。
  * 给了 onChange 就能选牌：单击切换一张；按住左键（或手指）横着拖过一段，松开时整段切换。
+ * 键盘（Tab 到牌上按回车/空格）和读屏工具的点击也能切换一张。
  */
-import { useRef, useState, type PointerEvent } from 'react';
+import { useEffect, useRef, useState, type KeyboardEvent, type MouseEvent, type PointerEvent } from 'react';
 import { Card, type CardFace } from './Card.tsx';
-import { dragSelection, indexAtX } from './dragSelect.ts';
+import { DragController, dragSelection, indexAtX } from './dragSelect.ts';
 import styles from './cards.module.css';
 
 export interface HandProps {
@@ -15,23 +16,24 @@ export interface HandProps {
   small?: boolean;
 }
 
-interface Drag {
-  pointerId: number;
-  anchor: number;
-  current: number;
-  /** 按下那一刻的手牌和选择：拖动中手牌变了也不会错位 */
-  ids: string[];
-  base: ReadonlySet<string>;
-}
-
 export function Hand({ cards, selected, onChange, small }: HandProps) {
   const ref = useRef<HTMLDivElement>(null);
-  const drag = useRef<Drag | null>(null);
+  const ctl = useRef(new DragController());
+  const pointerId = useRef<number | null>(null);
   // 拖动过程中的预览；松手才交给 onChange
   const [preview, setPreview] = useState<Set<string> | null>(null);
   const base = selected ?? new Set<string>();
   const ids = cards.map((c) => c.id);
+  const handKey = ids.join(',');
   const interactive = !!onChange && cards.length > 0;
+
+  // 手牌变了：作废进行中的拖选（指针位置已对不上按下时的那一排牌）
+  useEffect(() => {
+    if (!ctl.current.active) return;
+    ctl.current.cancel();
+    pointerId.current = null;
+    setPreview(null);
+  }, [handKey]);
 
   const indexAt = (clientX: number): number => {
     const slots = ref.current ? Array.from(ref.current.children) : [];
@@ -41,37 +43,56 @@ export function Hand({ cards, selected, onChange, small }: HandProps) {
     );
   };
 
+  const slotIndex = (target: EventTarget): number | null => {
+    const slot = (target as HTMLElement).closest?.('[data-idx]');
+    if (!slot || !ref.current?.contains(slot)) return null;
+    return Number((slot as HTMLElement).dataset.idx);
+  };
+
+  const toggleOne = (index: number) => onChange!(dragSelection(base, ids, index, index));
+
   const onPointerDown = (e: PointerEvent<HTMLDivElement>) => {
-    if (!interactive || drag.current) return;
+    if (!interactive || pointerId.current !== null) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return; // 只认左键
-    const slot = (e.target as HTMLElement).closest('[data-idx]');
-    if (!slot || !ref.current?.contains(slot)) return;
+    const index = slotIndex(e.target);
+    if (index === null) return;
     e.preventDefault(); // 不触发文字选择
-    const anchor = Number((slot as HTMLElement).dataset.idx);
-    drag.current = { pointerId: e.pointerId, anchor, current: anchor, ids, base };
-    ref.current.setPointerCapture?.(e.pointerId);
-    setPreview(dragSelection(base, ids, anchor, anchor));
+    pointerId.current = e.pointerId;
+    ref.current!.setPointerCapture?.(e.pointerId);
+    setPreview(ctl.current.down(ids, base, index));
   };
 
   const onPointerMove = (e: PointerEvent<HTMLDivElement>) => {
-    const d = drag.current;
-    if (!d || e.pointerId !== d.pointerId) return;
-    const current = Math.min(indexAt(e.clientX), d.ids.length - 1);
-    if (current === d.current) return;
-    d.current = current;
-    setPreview(dragSelection(d.base, d.ids, d.anchor, current));
+    if (e.pointerId !== pointerId.current) return;
+    const next = ctl.current.move(ids, indexAt(e.clientX));
+    if (next === null) {
+      pointerId.current = null;
+      setPreview(null);
+    } else setPreview(next);
   };
 
   const finish = (e: PointerEvent<HTMLDivElement>, commit: boolean) => {
-    const d = drag.current;
-    if (!d || e.pointerId !== d.pointerId) return;
-    drag.current = null;
+    if (e.pointerId !== pointerId.current) return;
+    pointerId.current = null;
     setPreview(null);
-    if (!commit) return;
-    // 手牌在拖动中变了（比如出掉了）：只保留现在还在手里的牌
-    const now = new Set(ids);
-    const next = dragSelection(d.base, d.ids, d.anchor, d.current);
-    onChange!(new Set([...next].filter((id) => now.has(id))));
+    if (!commit) return ctl.current.cancel();
+    const next = ctl.current.up(ids);
+    if (next) onChange!(next);
+  };
+
+  // 键盘、读屏工具产生的 click 没有对应的 pointer 事件（detail 为 0）；指针点击已在 pointerup 里处理过
+  const onClick = (e: MouseEvent<HTMLDivElement>) => {
+    if (!interactive || e.detail !== 0) return;
+    const index = slotIndex(e.target);
+    if (index !== null) toggleOne(index);
+  };
+
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (!interactive || (e.key !== 'Enter' && e.key !== ' ')) return;
+    const index = slotIndex(e.target);
+    if (index === null) return;
+    e.preventDefault();
+    toggleOne(index);
   };
 
   const shown = preview ?? base;
@@ -84,6 +105,8 @@ export function Hand({ cards, selected, onChange, small }: HandProps) {
       onPointerMove={onPointerMove}
       onPointerUp={(e) => finish(e, true)}
       onPointerCancel={(e) => finish(e, false)}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
     >
       {cards.map((c, i) => (
         <div key={c.id} className={styles.slot} data-idx={i}>
