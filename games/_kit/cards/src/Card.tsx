@@ -51,7 +51,7 @@ export function Card({ face, selected, small, interactive }: CardProps) {
       ) : (
         <>
           <div className={styles.corner}>
-            <span className={styles.rank}>{face.label}</span>
+            <span className={[styles.rank, face.label.length > 1 ? styles.rankWide : ''].join(' ')}>{face.label}</span>
             <span className={styles.suit}>{SUIT_SYMBOL[face.suit]}</span>
           </div>
           <div className={styles.pip}>{SUIT_SYMBOL[face.suit]}</div>

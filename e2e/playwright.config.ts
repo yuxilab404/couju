@@ -1,7 +1,7 @@
 import { mkdtempSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { defineConfig } from '@playwright/test';
+import { defineConfig, devices } from '@playwright/test';
 
 const port = 8791;
 const dataDir = mkdtempSync(join(tmpdir(), 'couju-e2e-'));
@@ -13,7 +13,13 @@ export default defineConfig({
   fullyParallel: false,
   workers: 1,
   // 和线上一样挂在子路径 /game/ 下跑，同时验证子路径部署
-  use: { baseURL: `http://127.0.0.1:${port}/game/`, viewport: { width: 1100, height: 800 } },
+  use: { baseURL: `http://127.0.0.1:${port}/game/` },
+  // 平台要求手机和电脑都能玩（AGENTS.md）：桌面跑全部流程，手机按一大一小两种竖屏用触屏再跑一遍
+  projects: [
+    { name: 'desktop', testIgnore: /mobile\.spec\.ts/, use: { viewport: { width: 1100, height: 800 } } },
+    { name: 'phone-360', testMatch: /mobile\.spec\.ts/, use: { ...devices['Galaxy S8'] } },
+    { name: 'phone-412', testMatch: /mobile\.spec\.ts/, use: { ...devices['Pixel 7'] } },
+  ],
   webServer: {
     // 用打包产物跑，和线上一致；需要先 npm run build
     command: 'node --disable-warning=ExperimentalWarning dist/server/server.mjs',
@@ -25,7 +31,7 @@ export default defineConfig({
       COUJU_PORT: String(port),
       COUJU_DATA_DIR: dataDir,
       COUJU_WEB_DIR: 'dist/web',
-      COUJU_ADMIN_EMAILS: 'admin@e2e.test,admin2@e2e.test',
+      COUJU_ADMIN_EMAILS: 'admin@e2e.test,admin2@e2e.test,phone-360@e2e.test,phone-412@e2e.test',
       COUJU_BASE_URL: `http://127.0.0.1:${port}/game`,
     },
   },
