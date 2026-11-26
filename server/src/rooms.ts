@@ -12,6 +12,7 @@ import {
   type ServerMsg,
   type UserId,
 } from '@couju/protocol';
+import { parseReport, ReportError, type Ratings } from './ratings.ts';
 
 export interface Conn {
   readonly id: number;
@@ -71,6 +72,8 @@ export interface RoomsOptions {
   /** 房间里一个在线的人都没有多久后关闭 */
   emptyRoomMs?: number;
   log?: (msg: string) => void;
+  /** 积分（ADR-0007）；不给则忽略房主的上报 */
+  ratings?: Ratings;
 }
 
 export class Rooms {
@@ -81,6 +84,7 @@ export class Rooms {
   private readonly hostGraceMs: number;
   private readonly emptyRoomMs: number;
   private readonly log: (msg: string) => void;
+  private readonly ratings: Ratings | null;
   private joinSeq = 0;
 
   constructor(opts: RoomsOptions = {}) {
@@ -88,6 +92,7 @@ export class Rooms {
     this.hostGraceMs = opts.hostGraceMs ?? LIMITS.hostGraceMs;
     this.emptyRoomMs = opts.emptyRoomMs ?? 5 * 60_000;
     this.log = opts.log ?? (() => {});
+    this.ratings = opts.ratings ?? null;
   }
 
   // ---------- 连接 ----------
@@ -225,6 +230,8 @@ export class Rooms {
       }
       case 'relay':
         return this.relay(cs, msg.to, msg.data);
+      case 'rating.report':
+        return this.reportRating(cs, msg.report);
       default:
         conn.send({ t: 'error', code: 'bad_request', message: '未知消息' });
     }
@@ -411,6 +418,37 @@ export class Rooms {
       return;
     }
     for (const id of targets) room.members.get(id)?.conn?.send(msg);
+  }
+
+  // ---------- 积分 ----------
+
+  private reportRating(cs: ConnState, raw: unknown): void {
+    const room = this.hostRoom(cs);
+    if (!room || !this.ratings) return;
+    let result;
+    try {
+      result = this.ratings.record(parseReport(raw));
+    } catch (e) {
+      if (!(e instanceof ReportError)) throw e;
+      cs.conn.send({ t: 'error', code: 'bad_request', message: e.message });
+      return;
+    }
+    cs.conn.send({ t: 'rating.result', result });
+    // 名字旁边显示的积分跟着变；取当前值而不是这局的 after，重复上报的旧局不会把分数改回去
+    const ids = result.changes.map((c) => c.userId);
+    for (const [id, rating] of this.ratings.current(ids)) {
+      const user = this.knownUser(id);
+      if (user && user.rating !== rating) this.updateUser({ ...user, rating });
+    }
+  }
+
+  private knownUser(id: UserId): PublicUser | null {
+    for (const r of this.rooms.values()) {
+      const m = r.members.get(id);
+      if (m) return m.user;
+    }
+    for (const cs of this.conns.values()) if (cs.conn.user.id === id) return cs.conn.user;
+    return null;
   }
 
   // ---------- 推送 ----------

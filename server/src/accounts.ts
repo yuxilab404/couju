@@ -7,6 +7,7 @@ import type { Me, PublicUser } from '@couju/protocol';
 import { AUTH, type Config } from './config.ts';
 import { startOfDayCst, type Db } from './db.ts';
 import { HttpError } from './errors.ts';
+import { RATING_COL } from './ratings.ts';
 import { invitationMail, loginCodeMail, type Mailer } from './mailer.ts';
 
 const EMAIL_RE = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
@@ -19,6 +20,7 @@ export interface UserRow {
   has_avatar: number;
   is_admin: number;
   created_at: number;
+  rating: number;
 }
 
 export interface WhitelistEntry {
@@ -47,6 +49,7 @@ export function toPublic(u: UserRow): PublicUser {
     // 相对地址，由页面的 <base href> 解析，站点挂在子路径下也能用
     // 版本号只增不减：删掉再传也不会复用旧的缓存地址
     avatarUrl: u.has_avatar ? `avatars/${u.id}?v=${u.avatar_ver}` : null,
+    rating: u.rating,
   };
 }
 
@@ -54,7 +57,7 @@ export function toMe(u: UserRow): Me {
   return { ...toPublic(u), email: u.email, isAdmin: !!u.is_admin };
 }
 
-const USER_COLS = 'id, email, nickname, avatar_ver, (avatar IS NOT NULL) AS has_avatar, is_admin, created_at';
+const USER_COLS = `id, email, nickname, avatar_ver, (avatar IS NOT NULL) AS has_avatar, is_admin, created_at, ${RATING_COL}`;
 
 export class Accounts {
   constructor(

@@ -209,6 +209,8 @@ export function result(s: State): Result | null {
     winners: landlordWin ? [L] : [0, 1, 2].filter((i) => i !== L),
     scores,
     summary: tags.join(' · '),
+    // 积分分量：1 分局 0.5，2 分 1，此后每翻一倍加 0.5（平台封顶 3）
+    weight: 0.5 + 0.5 * Math.log2(total),
   };
 }
 

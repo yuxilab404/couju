@@ -8,6 +8,7 @@ import { loadConfig } from './config.ts';
 import { Db } from './db.ts';
 import { loadHandoff, saveHandoff } from './handoff.ts';
 import { createMailer } from './mailer.ts';
+import { Ratings } from './ratings.ts';
 import { Rooms } from './rooms.ts';
 
 const cfg = loadConfig();
@@ -19,12 +20,13 @@ if (cfg.dev && cfg.baseUrl.startsWith('https://')) {
 const db = new Db(join(cfg.dataDir, 'couju.db'));
 const mailer = createMailer(cfg);
 const accounts = new Accounts(db, cfg, mailer);
-const rooms = new Rooms({ log: console.log });
+const ratings = new Ratings(db);
+const rooms = new Rooms({ log: console.log, ratings });
 // 上一个进程优雅退出时留下的房间表（ADR-0006）：读回后大家重连就接着打
 const handoffPath = join(cfg.dataDir, 'rooms-handoff.json');
 const handoff = loadHandoff(handoffPath, Date.now(), console.log);
 if (handoff) console.log(`[couju] 从上一个进程接回 ${rooms.importState(handoff)} 个房间`);
-const app = createApp({ cfg, accounts, rooms, devOutbox: mailer.devOutbox });
+const app = createApp({ cfg, accounts, rooms, ratings, devOutbox: mailer.devOutbox });
 
 const server = serve({ fetch: app.fetch, hostname: cfg.host, port: cfg.port }, (info) => {
   console.log(`[couju] build=${cfg.buildId} 监听 ${info.address}:${info.port}，前端 ${cfg.webDir}`);

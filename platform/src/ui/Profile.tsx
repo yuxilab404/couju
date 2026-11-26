@@ -1,5 +1,6 @@
-import { useRef, useState } from 'react';
-import type { Me } from '@couju/protocol';
+import { useEffect, useRef, useState } from 'react';
+import type { Me, PublicUser, RatingHistoryEntry } from '@couju/protocol';
+import { findGame } from '../registry.ts';
 import { href } from '../base.ts';
 import { api } from './api.ts';
 import { usePlatform } from './App.tsx';
@@ -89,6 +90,7 @@ export function Profile() {
         <p className="muted small">登录邮箱：{me.email}</p>
         {msg && <p className="small">{msg}</p>}
       </section>
+      <RatingCard userId={me.id} />
       <button
         onClick={async () => {
           await api('POST', '/api/auth/logout');
@@ -100,3 +102,53 @@ export function Profile() {
     </div>
   );
 }
+
+interface RatingInfo {
+  user: PublicUser;
+  games: number;
+  wins: number;
+  history: RatingHistoryEntry[];
+}
+
+/** 账号积分和最近的记录（ADR-0007） */
+function RatingCard({ userId }: { userId: number }) {
+  const { games } = usePlatform();
+  const [info, setInfo] = useState<RatingInfo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    api<RatingInfo>('GET', `/api/ratings/${userId}`).then(setInfo, (e: Error) => setError(e.message));
+  }, [userId]);
+  if (error) return <section className="card muted">积分读取失败：{error}</section>;
+  if (!info) return <section className="card muted">积分加载中…</section>;
+  return (
+    <section className="card">
+      <h2>积分 {info.user.rating}</h2>
+      <p className="muted small">
+        {info.games === 0
+          ? '还没有计分的对局。和朋友打一局，赢了加分、输了扣分；只有机器人陪打的局不计分。'
+          : `计分 ${info.games} 局 · 赢 ${info.wins} 局（${Math.round((info.wins / info.games) * 100)}%）`}
+      </p>
+      {info.history.length > 0 && (
+        <table>
+          <tbody>
+            {info.history.map((h) => {
+              const d = h.after - h.before;
+              return (
+                <tr key={h.matchId}>
+                  <td>{findGame(games, h.gameId)?.name ?? h.gameId}</td>
+                  <td className="muted small">{new Date(h.at).toLocaleString('zh-CN', { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' })}</td>
+                  <td>{h.won ? '赢' : '输'}</td>
+                  <td className="num">
+                    {h.after}
+                    <span className={d > 0 ? 'delta up' : d < 0 ? 'delta down' : 'delta'}>（{d > 0 ? `+${d}` : d}）</span>
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
+    </section>
+  );
+}
+

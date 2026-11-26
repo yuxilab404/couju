@@ -2,7 +2,7 @@
  * 平台层自己的消息，装在 relay.data 里，服务端看不懂也不需要看懂（ARCHITECTURE.md §5）。
  */
 import type { Result, Seat } from '@couju/sdk';
-import type { UserId } from '@couju/protocol';
+import type { MatchRating, MatchReport, UserId } from '@couju/protocol';
 
 export type SeatSlot =
   | { kind: 'empty' }
@@ -37,7 +37,11 @@ export interface GamePublic {
   /** 距截止还剩多少毫秒；接收方换算成本机时刻 */
   timer: { seats: Seat[]; remainingMs: number } | null;
   result: Result | null;
+  rating: RatingStatus;
 }
+
+/** 这局的账号积分：null = 不计分；'pending' = 已结束、等服务端记分；否则是服务端回的结果 */
+export type RatingStatus = MatchRating | 'pending' | null;
 
 /** 普通成员 → 房主 */
 export type ToHost =
@@ -69,6 +73,12 @@ export interface Checkpoint {
   scoreboard: Record<string, number>;
   round: number;
   game: GameEnvelope | null;
+  /**
+   * 已结束、服务端还没回执的积分上报（ADR-0007）。不只当前这局：断线时打完又开了下一局，
+   * 上一局的上报也在这里，换房主或刷新后接着报；服务端按 matchId 去重。
+   * TODO(del-when: 积分上线一周后，旧版本写的快照都已过期)：旧快照没有这个字段，按空处理
+   */
+  unrated?: MatchReport[];
 }
 
 export interface GameEnvelope {
@@ -81,6 +91,10 @@ export interface GameEnvelope {
   seq: number;
   /** 开局时座位后面是谁，结算记分用 */
   seatKeys: string[];
+  /** 开局时生成，上报积分时去重用（ADR-0007） */
+  matchId: string;
+  /** 服务端记完分回来的结果，下发给大家看 */
+  rating: MatchRating | null;
 }
 
 export function scoreKey(slot: SeatSlot, seat: Seat): string {

@@ -90,6 +90,7 @@ describe('计分', () => {
     expect(r.winners).toEqual([0]);
     expect(r.summary).toMatch(/春天/);
     expect(r.scores).toEqual([12, -6, -6]);
+    expect(r.weight).toBeCloseTo(0.5 + 0.5 * Math.log2(6));
   });
   it('反春：地主只出过一手，农民赢，×2', () => {
     let s = playingState({ hands: [['S03', 'S04'], ['S05', 'S06'], ['S07', 'S08']] });
@@ -119,6 +120,8 @@ describe('计分', () => {
     // 2 分 × 炸弹 2 × 王炸 2 × 春天 2 = 16
     expect(r.scores).toEqual([32, -16, -16]);
     expect(r.summary).toMatch(/= 16/);
+    // 积分分量：16 倍是 2 的 4 次方，0.5 + 0.5×4
+    expect(r.weight).toBe(2.5);
   });
 });
 
