@@ -21,6 +21,7 @@ const mailer = new FakeMailer();
 beforeAll(async () => {
   const web = mkdtempSync(join(tmpdir(), 'couju-web-'));
   writeFileSync(join(web, 'index.html'), '<!doctype html><title>凑局</title>');
+  writeFileSync(join(web, 'version.json'), '{"buildId":"web123"}');
   const cfg = testConfig({ webDir: web });
   const accounts = new Accounts(new Db(':memory:'), cfg, mailer);
   const rooms = new Rooms();
@@ -80,7 +81,13 @@ describe('挂在子路径下', () => {
 describe('HTTP + WS', () => {
   it('health 不需要登录', async () => {
     const r = await (await fetch(`${base}/api/health`)).json();
-    expect(r).toMatchObject({ ok: true, rooms: 0 });
+    expect(r).toMatchObject({ ok: true, rooms: 0, web: 'web123' });
+  });
+
+  it('version.json 不缓存，页面靠它发现新版本', async () => {
+    const r = await fetch(`${base}/version.json`);
+    expect(r.headers.get('cache-control')).toBe('no-cache');
+    expect(await r.json()).toEqual({ buildId: 'web123' });
   });
 
   it('未登录 /api/me 返回 401；页面返回 SPA 入口', async () => {

@@ -146,3 +146,60 @@ describe('Rooms', () => {
     expect(a.closed).toBe(true);
   });
 });
+
+describe('重启交接（ADR-0006）', () => {
+  function restart() {
+    const h = JSON.parse(JSON.stringify(rooms.exportState()));
+    rooms = new Rooms({ hostGraceMs: 15_000, emptyRoomMs: 60_000 });
+    rooms.importState(h);
+  }
+
+  it('导出再导入：成员、房主、入房顺序、大厅摘要、快照都在，大家重连回到原房间', () => {
+    const { a, roomId } = setup();
+    rooms.handle(a, { t: 'room.checkpoint', data: 'cp-1' });
+    restart();
+    expect(rooms.checkpointOf(roomId)).toBe('cp-1');
+
+    const b2 = connect(2);
+    rooms.handle(b2, { t: 'room.join', roomId });
+    const st = b2.last('room.state')!;
+    expect(st.hostId).toBe(1);
+    expect(st.meta).toEqual({ game: 'x' });
+    expect(st.members.map((m) => [m.id, m.connected])).toEqual([[1, false], [2, true], [3, false]]);
+
+    const a2 = connect(1);
+    rooms.handle(a2, { t: 'room.join', roomId });
+    expect(a2.last('room.host')).toMatchObject({ hostId: 1, checkpoint: 'cp-1' });
+    vi.advanceTimersByTime(20_000);
+    expect(b2.last('room.state')!.hostId).toBe(1); // 房主回来了，不换人
+
+    // 新进程里再进来的人排在后面
+    const d = connect(4);
+    rooms.handle(d, { t: 'room.join', roomId });
+    const order = d.last('room.state')!.members.map((m) => m.id);
+    expect(order).toEqual([1, 2, 3, 4]);
+  });
+
+  it('房主没回来：宽限期过后交给最早入房的在线成员，带上快照', () => {
+    const { a, roomId } = setup();
+    rooms.handle(a, { t: 'room.checkpoint', data: 'cp-2' });
+    restart();
+    const c2 = connect(3);
+    rooms.handle(c2, { t: 'room.join', roomId });
+    const b2 = connect(2);
+    rooms.handle(b2, { t: 'room.join', roomId });
+    vi.advanceTimersByTime(15_000);
+    expect(b2.last('room.host')).toMatchObject({ hostId: 2, checkpoint: 'cp-2' });
+  });
+
+  it('谁都没回来：空房照常到点关闭', () => {
+    const { roomId } = setup();
+    restart();
+    expect(rooms.stats().rooms).toBe(1);
+    vi.advanceTimersByTime(60_000);
+    expect(rooms.stats().rooms).toBe(0);
+    const x = connect(5);
+    rooms.handle(x, { t: 'room.join', roomId });
+    expect(x.last('error')).toMatchObject({ code: 'not_found' });
+  });
+});

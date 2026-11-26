@@ -10,6 +10,7 @@ import { Lobby } from './Lobby.tsx';
 import { Login } from './Login.tsx';
 import { Profile } from './Profile.tsx';
 import { Room } from './Room.tsx';
+import { tableActivity, UpdateWatcher } from '../update.ts';
 import { href } from '../base.ts';
 import { navigate, parseRoute, usePath } from './router.ts';
 import './app.css';
@@ -49,6 +50,8 @@ function Authed({ me, setMe, games, buildId }: { me: Me; setMe(m: Me | null): vo
     conn.start();
     return () => conn.stop();
   }, [conn]);
+  const updates = useMemo(() => new UpdateWatcher(buildId), [buildId]);
+  useEffect(() => updates.start((fn) => conn.onOpen(fn)), [updates, conn]);
   const cs = useSyncExternalStore(conn.state.subscribe, conn.state.get);
   const path = usePath();
   const route = parseRoute(path);
@@ -87,6 +90,7 @@ function Authed({ me, setMe, games, buildId }: { me: Me; setMe(m: Me | null): vo
             <span className="me-name">{me.nickname}</span>
           </a>
         </header>
+        <UpdateToast updates={updates} inRoom={route.name === 'room'} />
         <main className="content">
           {route.name === 'room' ? (
             <Room key={route.roomId ?? 'new'} roomId={route.roomId} />
@@ -100,5 +104,24 @@ function Authed({ me, setMe, games, buildId }: { me: Me; setMe(m: Me | null): vo
         </main>
       </div>
     </Ctx.Provider>
+  );
+}
+
+/** 有新版本时弹的提醒（ADR-0006）：点"刷新"重新加载页面；在房间里刷新也会自动回到原房间 */
+function UpdateToast({ updates, inRoom }: { updates: UpdateWatcher; inRoom: boolean }) {
+  const { latest } = useSyncExternalStore(updates.state.subscribe, updates.state.get);
+  const { playing } = useSyncExternalStore(tableActivity.subscribe, tableActivity.get);
+  const [dismissed, setDismissed] = useState<string | null>(null);
+  if (!latest || latest === dismissed || playing) return null;
+  return (
+    <div className="update-toast" role="status">
+      <span>凑局有新版本了，刷新一下就好{inRoom ? '（不会退出房间）' : ''}</span>
+      <button className="primary small" onClick={() => location.reload()}>
+        刷新
+      </button>
+      <button className="small" onClick={() => setDismissed(latest)}>
+        稍后
+      </button>
+    </div>
   );
 }

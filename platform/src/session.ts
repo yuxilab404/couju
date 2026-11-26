@@ -71,7 +71,8 @@ export class RoomSession {
   act(action: unknown): void {
     const seq = ++this.seq;
     this.state.set({ pending: true, error: null });
-    this.toHost({ k: 'act', seq, action });
+    // 断线时发不出去：别让按钮一直卡在"处理中"
+    if (!this.toHost({ k: 'act', seq, action })) this.state.set({ pending: false, error: '网络断开了，连上后再出一次' });
   }
 
   sit(seat: Seat | null): void {
@@ -101,17 +102,21 @@ export class RoomSession {
     this.lastMeta = '';
     if (roomId) {
       // 重连时房间可能已经关了（全员离线太久、服务端重启）：回到 joining，收到 not_found 就转为 gone
-      this.state.set({ status: 'joining' });
+      // 断开期间发出的操作可能丢了，房主补发视图后还轮到自己就再点一次，所以先把按钮放开
+      this.state.set({ status: 'joining', pending: false });
       this.link.send({ t: 'room.join', roomId });
     } else {
       this.link.send({ t: 'room.create', meta: null });
     }
   }
 
-  private toHost(msg: ToHost): void {
+  private toHost(msg: ToHost): boolean {
     const { hostId } = this.state.get();
-    if (this.engine) this.engine.onRelay(this.myId, msg);
-    else if (hostId !== null) this.link.send({ t: 'relay', to: 'host', data: msg });
+    if (this.engine) {
+      this.engine.onRelay(this.myId, msg);
+      return true;
+    }
+    return hostId !== null && this.link.send({ t: 'relay', to: 'host', data: msg });
   }
 
   private onServer(m: ServerMsg): void {

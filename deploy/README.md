@@ -21,7 +21,8 @@
 2. miao 上的 `couju-poll` 发现 `BUILD_ID` 变了 → 下载、校验 sha256 → 执行包里的 `miao-deploy.sh`。
 3. `miao-deploy.sh`：
    - 服务端没变：备份数据库，原子切换前端软链，不重启。
-   - 服务端变了：构建镜像；等到没有在线房间（最多 30 分钟，等不到就放弃，下一轮再试）；备份；换前端；起新容器；20 秒内健康检查不过就回滚到旧镜像。
+   - 服务端变了：构建镜像；备份；`docker stop` 旧容器（它把房间表写进 `data/rooms-handoff.json`）；换前端；起新容器（读回房间表、删掉文件）；20 秒内健康检查不过就把前端和镜像都退回上一个版本。**不等房间清空**，有人在打牌也照常上线，大家断开 1–3 秒后自动重连、接着打（[ADR-0006](../docs/adr/0006-hot-update.md)）。
+4. 已打开的页面在重连后、切回前台时、每 10 分钟拉一次 `version.json`，发现新版本就弹"刷新一下"的提醒；对局中先不弹，这局打完再弹。
 
 不需要任何部署密钥：仓库公开，Release 用 Actions 自带的 `GITHUB_TOKEN` 发布，miao 匿名下载。
 
@@ -29,17 +30,13 @@
 
 ```bash
 # 看状态
-docker ps -f name=couju; curl -s 127.0.0.1:8790/api/health; cat /var/lib/couju/deployed
+docker ps -f name=couju; curl -s 127.0.0.1:8790/api/health; cat /var/lib/couju/deployed   # health 里 build 是服务端版本，web 是前端版本
 journalctl -u couju-deploy --since today    # 自动部署日志
 docker logs --tail 100 couju                # 服务日志
 
-# 有人在玩也要立刻上线
-curl -fsSL -o /tmp/c.tgz https://github.com/yuxilab404/couju/releases/download/deploy/couju.tar.gz
-tar xzf /tmp/c.tgz -C /tmp couju/miao-deploy.sh && bash /tmp/couju/miao-deploy.sh /tmp/c.tgz --force
-
 # 回滚服务端到上一个镜像
 docker images couju                          # 找旧标签
-docker rm -f couju && docker run ...         # 参数见 miao-deploy.sh 的 run_container
+docker stop -t 10 couju && docker rm couju && docker run ...   # 参数见 miao-deploy.sh 的 run_container；用 stop 才会写交接文件，别用 rm -f
 
 # 回滚前端
 ln -sfn releases/<旧构建号> /var/lib/couju/web/.t && mv -Tf /var/lib/couju/web/.t /var/lib/couju/web/current

@@ -47,6 +47,24 @@ interface ConnState {
   warnedAt: number;
 }
 
+/**
+ * 优雅重启时交给下一个进程的房间表（ADR-0006）。只是同一份事实跨进程搬运：
+ * 新进程读回后立刻删文件，成员一律当作掉线，由重连接回。
+ */
+export interface RoomsHandoff {
+  v: 1;
+  writtenAt: number;
+  joinSeq: number;
+  rooms: {
+    id: string;
+    hostId: UserId;
+    createdAt: number;
+    meta: unknown;
+    checkpoint: string | null;
+    members: { user: PublicUser; joinedAt: number }[];
+  }[];
+}
+
 export interface RoomsOptions {
   now?: () => number;
   hostGraceMs?: number;
@@ -116,6 +134,48 @@ export class Rooms {
     let active = 0;
     for (const r of this.rooms.values()) if ([...r.members.values()].some((m) => m.conn)) active++;
     return { rooms: this.rooms.size, activeRooms: active, connections: this.conns.size };
+  }
+
+  // ---------- 重启交接 ----------
+
+  exportState(): RoomsHandoff {
+    return {
+      v: 1,
+      writtenAt: this.now(),
+      joinSeq: this.joinSeq,
+      rooms: [...this.rooms.values()].map((r) => ({
+        id: r.id,
+        hostId: r.hostId,
+        createdAt: r.createdAt,
+        meta: r.meta,
+        checkpoint: r.checkpoint,
+        members: [...r.members.values()].map((m) => ({ user: m.user, joinedAt: m.joinedAt })),
+      })),
+    };
+  }
+
+  /** 读回上一个进程的房间表：所有人当作同时掉线，房主照常有宽限期，空房照常到点关闭 */
+  importState(h: RoomsHandoff): number {
+    this.joinSeq = Math.max(this.joinSeq, h.joinSeq);
+    let n = 0;
+    for (const r of h.rooms) {
+      if (this.rooms.has(r.id) || r.members.length === 0) continue;
+      const room: Room = {
+        id: r.id,
+        hostId: r.hostId,
+        members: new Map(r.members.map((m) => [m.user.id, { user: m.user, conn: null, joinedAt: m.joinedAt }])),
+        meta: r.meta,
+        checkpoint: r.checkpoint,
+        createdAt: r.createdAt,
+        hostTimer: null,
+        emptyTimer: null,
+      };
+      room.hostTimer = setTimeout(() => this.electHost(room), this.hostGraceMs);
+      room.emptyTimer = setTimeout(() => this.close(room), this.emptyRoomMs);
+      this.rooms.set(room.id, room);
+      n++;
+    }
+    return n;
   }
 
   // ---------- 消息 ----------
