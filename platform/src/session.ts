@@ -191,7 +191,7 @@ export class RoomSession {
       seq: g.seq,
       timer: g.timer ? { seats: g.timer.seats, deadline: Date.now() + g.timer.remainingMs } : null,
       result: g.result,
-      // 旧版本房主发来的视图没有这个字段
+      // TODO(del-when: 积分上线一周后，打开着的旧版本页面都已刷新)：旧版本房主发来的视图没有这个字段
       rating: g.rating ?? null,
     };
     const progressed = !prev || !game || game.seq !== prev.seq;
