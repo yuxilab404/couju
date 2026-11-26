@@ -12,7 +12,9 @@ async function login(page: Page, email: string) {
   await expect(page.getByRole('heading', { name: '开一桌' })).toBeVisible();
 }
 
-/** 轮到自己就操作：叫分阶段叫 3 分或不叫；出牌阶段按提示出，提示不了就不要 */
+let passedWithSelection = false;
+
+/** 轮到自己就操作：叫分阶段叫 3 分或不叫；出牌阶段按提示出，提示不了就（选一张后）不要 */
 async function playUntilEnd(page: Page, maxSteps = 400) {
   const result = page.getByRole('heading', { name: '本局结束' });
   for (let i = 0; i < maxSteps; i++) {
@@ -28,7 +30,12 @@ async function playUntilEnd(page: Page, maxSteps = 400) {
         await hint.click();
         await play.click();
       } else {
+        // 先选一张牌再点"不要"：选着的牌要落回去
+        await page.locator('[data-card][aria-pressed]').first().click({ position: { x: 6, y: 20 } });
+        await expect(page.locator('[data-card][aria-pressed="true"]')).toHaveCount(1);
         await page.getByRole('button', { name: '不要' }).click();
+        await expect(page.locator('[data-card][aria-pressed="true"]')).toHaveCount(0);
+        passedWithSelection = true;
       }
     }
     await page.waitForTimeout(250);
@@ -76,8 +83,20 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
   await page.keyboard.press('Enter');
   await expect(pressed()).toHaveCount(0);
 
+  // 记牌器：开局时别人手里一共 34 张 + 3 张没翻开的底牌 = 37；能收起、展开
+  const counter = page.getByLabel('记牌器');
+  await expect(counter).toBeVisible();
+  const total = async () =>
+    (await counter.locator('[data-rank]').allInnerTexts()).reduce((n, t) => n + Number(t.replace(/\D+/g, ' ').trim().split(' ').pop()), 0);
+  if (await page.getByRole('button', { name: '3 分' }).isVisible()) expect(await total()).toBe(37);
+  await counter.getByRole('button', { name: /记牌器/ }).click();
+  await expect(counter.locator('[data-rank]')).toHaveCount(0);
+  await counter.getByRole('button', { name: /记牌器/ }).click();
+  await expect(counter.locator('[data-rank]')).toHaveCount(15);
+
   await playUntilEnd(page);
   await expect(page.locator('.result')).toContainText(/地主|农民/);
+  test.info().annotations.push({ type: '选牌后不要', description: passedWithSelection ? '本局走到了' : '本局没轮到' });
   // 两个对手剩下的牌摊在牌桌上
   await expect(page.locator('[data-leftover]')).toHaveCount(2);
   // 结算弹窗按住标题能拖走，不挡牌桌

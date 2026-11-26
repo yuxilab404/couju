@@ -3,7 +3,8 @@ import { CardBack, Hand } from '@couju/kit-cards';
 import type { Seat, SeatInfo, TurnUIProps } from '@couju/sdk';
 import { useEffect, useMemo, useState } from 'react';
 import { hints } from './bot.ts';
-import { faceOf, sortCards } from './cards.ts';
+import { faceOf, RANK_LABEL, sortCards } from './cards.ts';
+import { COUNTER_RANKS, outstanding } from './counter.ts';
 import type { Action, Recent, View } from './rules.ts';
 import styles from './ui.module.css';
 
@@ -123,6 +124,12 @@ export function Board(props: TurnUIProps<View, Action>) {
   const handKey = v.hand.join();
   const trickKey = `${v.turn}|${v.history.length}|${v.phase}`;
   useEffect(() => setSelected(new Set()), [handKey]);
+  // 我"不要"了（自己点的，或超时被代打），选着的牌落回去
+  const lastEntry = v.history[v.history.length - 1];
+  const iJustPassed = !!lastEntry && lastEntry.seat === seat && lastEntry.cards === null;
+  useEffect(() => {
+    if (iJustPassed) setSelected(new Set());
+  }, [iJustPassed, v.history.length]);
   useEffect(() => setHintIdx(0), [trickKey]);
   const hintList = useMemo(() => (myTurn ? hints(v) : []), [myTurn, trickKey, handKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -166,6 +173,8 @@ export function Board(props: TurnUIProps<View, Action>) {
         </div>
       </div>
 
+      {v.phase !== 'ended' && <CardCounter v={v} />}
+
       <div className={styles.opponents}>
         <SeatPanel v={v} seat={left} info={info(left)} secondsLeft={secondsLeft} side="left" />
         <SeatPanel v={v} seat={right} info={info(right)} secondsLeft={secondsLeft} side="right" />
@@ -206,7 +215,13 @@ export function Board(props: TurnUIProps<View, Action>) {
         )}
         {canAct && v.phase === 'playing' && (
           <div className={styles.actions}>
-            <button disabled={!v.lastPlay} onClick={() => act({ type: 'pass' })}>
+            <button
+              disabled={!v.lastPlay}
+              onClick={() => {
+                setSelected(new Set());
+                act({ type: 'pass' });
+              }}
+            >
               不要
             </button>
             <button onClick={hint} disabled={hintList.length === 0}>
@@ -247,3 +262,47 @@ export function Board(props: TurnUIProps<View, Action>) {
   );
 }
 
+
+const COUNTER_KEY = 'couju.doudizhu.counter';
+
+function readCounterPref(): boolean {
+  try {
+    return localStorage.getItem(COUNTER_KEY) !== 'off';
+  } catch {
+    return true;
+  }
+}
+
+/** 记牌器：别人手里每个点数还剩几张。只用自己的手牌和公开的出牌记录算，见 counter.ts */
+function CardCounter({ v }: { v: View }) {
+  const [open, setOpen] = useState(readCounterPref);
+  const toggle = () => {
+    const next = !open;
+    setOpen(next);
+    try {
+      localStorage.setItem(COUNTER_KEY, next ? 'on' : 'off');
+    } catch {
+      /* 隐私模式 */
+    }
+  };
+  const left = outstanding(v);
+  return (
+    <div className={styles.counter} aria-label="记牌器">
+      <button type="button" className={styles.counterToggle} onClick={toggle} aria-expanded={open}>
+        记牌器 {open ? '▾' : '▸'}
+      </button>
+      {open &&
+        COUNTER_RANKS.map((r) => (
+          <span
+            key={r}
+            className={[styles.counterCell, left[r] === 0 ? styles.counterGone : '', left[r] === 4 ? styles.counterFour : ''].join(' ')}
+            data-rank={r}
+            title={`${RANK_LABEL[r]}：别人手里还有 ${left[r]} 张`}
+          >
+            <span className={styles.counterRank}>{r === 17 ? '大' : r === 16 ? '小' : RANK_LABEL[r]}</span>
+            <span className={styles.counterNum}>{left[r]}</span>
+          </span>
+        ))}
+    </div>
+  );
+}
