@@ -48,7 +48,8 @@ export function createApp({ cfg, accounts, rooms, devOutbox }: AppDeps) {
     return c.json({ error: '服务器出错了' }, 500);
   });
 
-  app.get('/api/health', (c) => c.json({ ok: true, build: cfg.buildId, ...rooms.stats() }));
+  // build 是服务端镜像的版本；只换前端时它不变，前端版本看 web（读 version.json）
+  app.get('/api/health', async (c) => c.json({ ok: true, build: cfg.buildId, web: await webBuild(cfg.webDir), ...rooms.stats() }));
 
   if (cfg.dev && devOutbox) {
     app.get('/api/dev/last-code', (c) => {
@@ -168,6 +169,15 @@ const MIME: Record<string, string> = {
   '.woff2': 'font/woff2',
   '.txt': 'text/plain; charset=utf-8',
 };
+
+async function webBuild(root: string): Promise<string | null> {
+  try {
+    const v = JSON.parse(await readFile(join(root, 'version.json'), 'utf8')) as { buildId?: unknown };
+    return typeof v.buildId === 'string' ? v.buildId : null;
+  } catch {
+    return null;
+  }
+}
 
 async function serveStatic(c: Context, root: string, basePath: string): Promise<Response> {
   const path = decodeURIComponent(new URL(c.req.url).pathname);

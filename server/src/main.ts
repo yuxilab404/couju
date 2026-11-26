@@ -6,6 +6,7 @@ import { Accounts } from './accounts.ts';
 import { attachWebSocket, createApp } from './app.ts';
 import { loadConfig } from './config.ts';
 import { Db } from './db.ts';
+import { loadHandoff, saveHandoff } from './handoff.ts';
 import { createMailer } from './mailer.ts';
 import { Rooms } from './rooms.ts';
 
@@ -19,6 +20,10 @@ const db = new Db(join(cfg.dataDir, 'couju.db'));
 const mailer = createMailer(cfg);
 const accounts = new Accounts(db, cfg, mailer);
 const rooms = new Rooms({ log: console.log });
+// 上一个进程优雅退出时留下的房间表（ADR-0006）：读回后大家重连就接着打
+const handoffPath = join(cfg.dataDir, 'rooms-handoff.json');
+const handoff = loadHandoff(handoffPath, Date.now(), console.log);
+if (handoff) console.log(`[couju] 从上一个进程接回 ${rooms.importState(handoff)} 个房间`);
 const app = createApp({ cfg, accounts, rooms, devOutbox: mailer.devOutbox });
 
 const server = serve({ fetch: app.fetch, hostname: cfg.host, port: cfg.port }, (info) => {
@@ -36,6 +41,15 @@ setInterval(() => accounts.sweep(), 3_600_000).unref();
 for (const sig of ['SIGINT', 'SIGTERM'] as const) {
   process.on(sig, () => {
     console.log(`[couju] 收到 ${sig}，退出`);
+    try {
+      const h = rooms.exportState();
+      if (h.rooms.length > 0) {
+        saveHandoff(handoffPath, h);
+        console.log(`[couju] 已把 ${h.rooms.length} 个房间交给下一个进程`);
+      }
+    } catch (e) {
+      console.error('[couju] 写交接文件失败，房间会丢', e);
+    }
     server.close();
     db.raw.close();
     process.exit(0);
