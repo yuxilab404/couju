@@ -213,6 +213,14 @@ function Pile({ v, name, from }: { v: View; name: (s: Seat) => string; from: (s:
   );
 }
 
+/**
+ * 最近一次翻牌是不是刚发生、桌上还没往下走：新一轮还没人出牌，或者这一翻决出了胜负
+ * （终局时规则保留最后一手，claims 不为空）。这时桌上按翻牌时间线放，结算也等它放完。
+ */
+export function revealJustHappened(v: View): boolean {
+  return v.showdowns.length > 0 && (v.claims.length === 0 || v.phase === 'ended');
+}
+
 export function Board(props: TurnUIProps<View, Action>) {
   const { view: v, seat, seats, act, pending, error, timer, result } = props;
   const info = (s: Seat) => seats.find((x) => x.seat === s);
@@ -239,8 +247,8 @@ export function Board(props: TurnUIProps<View, Action>) {
   const last = v.claims[v.claims.length - 1];
   const lastShowdown = v.showdowns[v.showdowns.length - 1];
   const freshShowdown = !!lastShowdown && v.showdowns.length > seenAtMount.current;
-  // 刚翻完、新一轮还没人出牌：桌面中间先让给翻牌
-  const justRevealed = freshShowdown && v.claims.length === 0;
+  // 刚翻完（新一轮还没人出牌，或这一翻定了胜负）：先把翻牌放完
+  const justRevealed = freshShowdown && revealJustHappened(v);
   const shooter = freshShowdown ? lastShowdown.shooter : null;
   const revealEnd = justRevealed ? showdownTimeline(lastShowdown.revealed.length).end : 0;
   const tooMany = selected.size > MAX_PLAY;
