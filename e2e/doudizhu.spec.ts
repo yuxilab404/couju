@@ -97,6 +97,30 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
   await playUntilEnd(page);
   await expect(page.locator('.result')).toContainText(/地主|农民/);
   test.info().annotations.push({ type: '选牌后不要', description: passedWithSelection ? '本局走到了' : '本局没轮到' });
+  // 两个对手剩下的牌摊在牌桌上
+  await expect(page.locator('[data-leftover]')).toHaveCount(2);
+  // 结算弹窗按住标题能拖走，不挡牌桌
+  const dialog = page.getByRole('dialog', { name: '本局结束' });
+  const before = (await dialog.boundingBox())!;
+  const title = (await page.getByRole('heading', { name: '本局结束' }).boundingBox())!;
+  await page.mouse.move(title.x + 20, title.y + title.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(title.x + 20 + 200, title.y + title.height / 2 + 150, { steps: 5 });
+  await page.mouse.up();
+  const after = (await dialog.boundingBox())!;
+  expect(Math.round(after.x - before.x)).toBe(200);
+  expect(Math.round(after.y - before.y)).toBe(150);
+  // 往上拖过头：标题停在顶部导航栏下面，还能按住再拖回来
+  const heading = page.getByRole('heading', { name: '本局结束' });
+  const t2 = (await heading.boundingBox())!;
+  await page.mouse.move(t2.x + 20, t2.y + t2.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(t2.x + 20, t2.y - 2000, { steps: 5 });
+  await page.mouse.up();
+  const bar = (await page.locator('.topbar').boundingBox())!;
+  const t3 = (await heading.boundingBox())!;
+  expect(t3.y).toBeGreaterThanOrEqual(bar.y + bar.height);
+  await heading.click({ position: { x: 20, y: t3.height / 2 } }); // 标题没被导航栏盖住，点得到
   await page.getByRole('button', { name: '再来一局' }).click();
   await expect(page.getByRole('heading', { name: '本局结束' })).toBeHidden();
   await expect(page.getByText('本房间累计').or(page.locator('[class*=board]'))).toBeVisible();

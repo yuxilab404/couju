@@ -132,7 +132,9 @@
 }
 .played { min-height: 56px; width: 100%; display: flex; flex-direction: column; gap: 4px; }
 .right .played { align-items: flex-end; }
-.revealed { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; white-space: nowrap; }
+.revealed { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; white-space: nowrap; max-width: 100%; }
+.right .revealed { flex-direction: row-reverse; }
+.myHand .revealed { justify-content: center; }
 .pass { font-size: 18px; font-weight: 700; color: #ffe082; padding: 8px 4px; }
 
 .mine { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: auto; }

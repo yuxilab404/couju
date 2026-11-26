@@ -47,6 +47,24 @@ function RecentPlay({ recent }: { recent: Recent }) {
   return <Hand small cards={sortCards(recent).map(faceOf)} />;
 }
 
+/** 一局结束后摊开这个座位手里剩下的牌 */
+function Leftover({ v, seat }: { v: View; seat: Seat }) {
+  const left = v.revealed?.[seat];
+  if (!left) return null;
+  return (
+    <div className={styles.revealed} data-leftover={seat}>
+      {left.length > 0 ? (
+        <>
+          <span>剩 {left.length} 张</span>
+          <Hand small cards={left.map(faceOf)} />
+        </>
+      ) : (
+        <span>出完了</span>
+      )}
+    </div>
+  );
+}
+
 function SeatPanel(props: {
   v: View;
   seat: Seat;
@@ -84,6 +102,7 @@ function SeatPanel(props: {
       </div>
       <div className={styles.played}>
         {bid ? <div className={styles.pass}>{bid}</div> : <RecentPlay recent={v.recent[seat]} />}
+        <Leftover v={v} seat={seat} />
       </div>
     </div>
   );
@@ -176,13 +195,6 @@ export function Board(props: TurnUIProps<View, Action>) {
               {seat !== null && result.winners.includes(seat) ? '你赢了' : seat !== null ? '你输了' : '本局结束'}
             </div>
             <div>{result.summary}</div>
-            {v.revealed &&
-              [left, right].filter((x) => v.revealed![x].length > 0).map((x) => (
-                <div key={x} className={styles.revealed}>
-                  <span>{info(x)?.name ?? `座位 ${x + 1}`} 剩</span>
-                  <Hand small cards={v.revealed![x].map(faceOf)} />
-                </div>
-              ))}
           </div>
         )}
 
@@ -235,6 +247,11 @@ export function Board(props: TurnUIProps<View, Action>) {
                 <span className={styles.dim}>{v.hand.length} 张</span>
               </div>
               <Hand cards={v.hand.map(faceOf)} selected={selected} onChange={choose} />
+            </>
+          ) : v.revealed ? (
+            <>
+              <div className={styles.dim}>旁观中 · {info(0)?.name ?? '座位 1'}</div>
+              <Leftover v={v} seat={0} />
             </>
           ) : (
             <div className={styles.dim}>旁观中 · 座位 1 剩 {v.counts[0]} 张</div>
