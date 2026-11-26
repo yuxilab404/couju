@@ -25,7 +25,7 @@ export default defineConfig({
       COUJU_PORT: String(port),
       COUJU_DATA_DIR: dataDir,
       COUJU_WEB_DIR: 'dist/web',
-      COUJU_ADMIN_EMAILS: 'admin@e2e.test,admin2@e2e.test',
+      COUJU_ADMIN_EMAILS: 'admin@e2e.test,admin2@e2e.test,admin3@e2e.test',
       COUJU_BASE_URL: `http://127.0.0.1:${port}/game`,
     },
   },
