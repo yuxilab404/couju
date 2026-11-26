@@ -76,6 +76,7 @@ interface TurnRules<S, A> {
   apply(s: S, seat: Seat, a: A, ctx: { rng: Rng }): S;
   timer?(s: S): { ms: number; seats: Seat[]; key?: string } | null; // 需要倒计时的局面；同 key 沿用原截止时刻
   onTimeout?(s: S, seat: Seat): A;               // 不提供就让 bot 替这个座位出
+  pause?(s: S): number;                          // 进入这个局面后停多久让人看清（翻牌之类），bot 停完再出手（§4.3）
 }
 
 interface RealtimeRules<S, I> {
@@ -143,9 +144,11 @@ interface BotCtx {
      ▼
  对每个在座玩家：view(s, seat) ─▶ 只发给他（房主自己本地直接用）
  快照 ─▶ room.checkpoint（每次状态变化都发，几 KB）
- active() 里有 bot 座位 ─▶ 调 bot.decide（加一点"思考"延迟）─▶ 当成 act 走同一条路
- timer() ─▶ 设倒计时，到点走 onTimeout 或 bot
+ active() 里有 bot 座位 ─▶ 等 pause() 停完 + 一点"思考"延迟 ─▶ 调 bot.decide ─▶ 当成 act 走同一条路
+ timer() ─▶ 设倒计时（顺延 pause() 那么久），到点走 onTimeout 或 bot
 ```
+
+节奏（[ADR-0008](./docs/adr/0008-table-pacing.md)）：bot 默认思考 0.8–1.5 秒；游戏用 `pause(s)` 声明某个局面要多停一会儿（唬牌翻牌约 3 秒），平台在这段时间里不让 bot 出手、倒计时顺延，剩下的停顿随视图下发（`pauseMs`），结算弹窗等它停完再弹。停顿只是节奏，不进规则，回放和交接都不需要它。出牌飞入、翻牌、发牌这些通用动画在 `games/_kit/cards`（`FlyIn`、`FlipCard`、`Hand deal`）。
 
 bot 的决定回来时局面可能已经变了（比如大模型思考了十秒），平台照常 `validate`，不合法就丢掉重新问。
 

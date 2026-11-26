@@ -155,6 +155,28 @@ describe('HostEngine', () => {
     expect(io.lastSync(1)!.game!.seq).toBe(seq0);
   });
 
+  it('游戏声明的停顿：bot 停完才出手，倒计时顺延', async () => {
+    // 真人出过手、轮到 1 号座位时停 3 秒（像唬牌翻完牌）
+    const paused = { ...toy, turn: { ...toy.turn, pause: (s: { n: number; turn: number }) => (s.n > 0 && s.turn === 1 ? 3000 : 0) } };
+    const h = new HostEngine([paused], io, [member(1)], null, { botDelayMs: [100, 100], random: () => 0.5, freeze: true });
+    h.setSeatCount(2);
+    h.start();
+    await flush();
+    const g = () => io.lastSync(1)!.game!;
+    const turn = () => (g().view as { turn: number; n: number }).turn;
+    // 1 号座位是 bot：先轮到它就等它出一手
+    if (turn() === 1) await vi.advanceTimersByTimeAsync(150);
+    expect(turn()).toBe(0);
+    h.onRelay(1, { k: 'act', seq: 1, action: { add: 2 } });
+    await flush();
+    expect(g().timer?.remainingMs).toBe(13_000);
+    const seq = g().seq;
+    await vi.advanceTimersByTimeAsync(3050);
+    expect(g().seq).toBe(seq);
+    await vi.advanceTimersByTimeAsync(100);
+    expect(g().seq).toBe(seq + 1);
+  });
+
   it('从快照恢复：新房主接着跑，掉线的旧房主立即托管', async () => {
     const h = engine();
     h.start();

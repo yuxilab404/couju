@@ -174,6 +174,26 @@ function showdown(s: State, accuser: Seat, rng: Rng): State {
   return { ...s, alive, shots, showdowns, out, round: s.round + 1, table, hands, undealt, plays: [], turn: starter };
 }
 
+/**
+ * 翻牌动画的时间线（毫秒，从翻牌那一刻算）：喊骗子 → 一张张翻开 → 判定 → 扣扳机 → 枪响。
+ * 画面按它放，pause 也按它停，bot 等它放完再出手。只是节奏，不影响规则。
+ */
+export function showdownTimeline(cards: number) {
+  const flip = 400;
+  const flipGap = 280;
+  const verdict = flip + Math.max(0, cards - 1) * flipGap + 500;
+  const trigger = verdict + 500;
+  const shot = trigger + 800;
+  return { flip, flipGap, verdict, trigger, shot, end: shot + 600 };
+}
+
+/** 刚翻完牌（新一轮还没人出，或者这一下决出了胜负）：桌上停到动画放完 */
+export function pause(s: State): number {
+  const d = s.showdowns[s.showdowns.length - 1];
+  if (!d || (s.phase === 'playing' && s.plays.length > 0)) return 0;
+  return showdownTimeline(d.revealed.length).end;
+}
+
 export function timer(s: State): { ms: number; seats: Seat[] } | null {
   if (s.phase === 'ended') return null;
   return { ms: PLAY_MS, seats: [s.turn] };

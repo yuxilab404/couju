@@ -18,6 +18,7 @@ const liarRoulette = defineTurnGame<State, Action, View>({
     validate: rules.validate,
     apply: rules.apply,
     timer: rules.timer,
+    pause: rules.pause,
   },
   view: rules.view,
   result: rules.result,

@@ -22,6 +22,8 @@ export interface GameState {
   timer: { seats: Seat[]; deadline: number } | null;
   result: Result | null;
   rating: RatingStatus;
+  /** 本机时钟：桌上动画放到这一刻（TurnRules.pause），结算弹窗等它 */
+  settleAt: number;
 }
 
 export interface RoomState {
@@ -193,6 +195,7 @@ export class RoomSession {
       result: g.result,
       // TODO(del-when: 积分上线一周后，打开着的旧版本页面都已刷新)：旧版本房主发来的视图没有这个字段
       rating: g.rating ?? null,
+      settleAt: Date.now() + (g.pauseMs ?? 0),
     };
     const progressed = !prev || !game || game.seq !== prev.seq;
     this.state.set((s) => ({

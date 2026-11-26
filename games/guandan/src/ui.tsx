@@ -1,7 +1,7 @@
 /** 掼蛋牌桌画面：自己在下，对家在上，上家在左，下家在右 */
-import { Hand } from '@couju/kit-cards';
+import { FlyIn, Hand, lastPlayIndex, motion } from '@couju/kit-cards';
 import type { Seat, SeatInfo, TurnUIProps } from '@couju/sdk';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { hints, type Move } from './bot.ts';
 import { faceOf, isWild, RANK_LABEL, sortCards, valueOf } from './cards.ts';
 import { COUNTER_RANKS, outstanding } from './counter.ts';
@@ -58,6 +58,16 @@ function RecentPlay({ v, seat }: { v: View; seat: Seat }) {
   );
 }
 
+/** 座位最近一手：每出一手从 from（头像或我的手牌）飞到出牌区 */
+function FlyingPlay({ v, seat, from }: { v: View; seat: Seat; from: () => Element | null }) {
+  const i = lastPlayIndex(v.history, seat);
+  return (
+    <FlyIn k={i === null ? null : `${v.handNo}-${i}`} from={from} className={styles.flying}>
+      <RecentPlay v={v} seat={seat} />
+    </FlyIn>
+  );
+}
+
 function TeamDot({ seat }: { seat: Seat }) {
   return <span className={styles.teamDot} style={{ background: TEAM_COLORS[teamOf(seat)] }} title={`队伍 ${teamOf(seat) + 1}`} />;
 }
@@ -86,9 +96,10 @@ function SeatPanel(props: { v: View; seat: Seat; info: SeatInfo | undefined; sec
   const isTurn = v.phase === 'playing' && v.turn === seat;
   const waiting = (v.phase === 'tribute' || v.phase === 'return') && actingInTribute(v).includes(seat);
   const place = placeOf(v, seat);
+  const who = useRef<HTMLDivElement>(null);
   return (
-    <div className={[styles.seat, styles[pos], isTurn || waiting ? styles.turn : ''].join(' ')} data-seat={seat}>
-      <div className={styles.who}>
+    <div className={[styles.seat, styles[pos], isTurn || waiting ? styles.turn : '', isTurn || waiting ? motion.breathe : ''].join(' ')} data-seat={seat}>
+      <div className={styles.who} ref={who}>
         <Avatar info={info} />
         <div className={styles.meta}>
           <div className={styles.name}>
@@ -106,7 +117,9 @@ function SeatPanel(props: { v: View; seat: Seat; info: SeatInfo | undefined; sec
                 {v.counts[seat]}
               </span>
             )}
-            {(isTurn || waiting) && secondsLeft !== null && <span className={styles.clock}>{secondsLeft}</span>}
+            {(isTurn || waiting) && secondsLeft !== null && (
+              <span className={[styles.clock, secondsLeft <= 5 ? motion.hurry : ''].join(' ')}>{secondsLeft}</span>
+            )}
             {info?.kind === 'bot' && <span className={styles.tag}>电脑</span>}
             {info?.hosted && <span className={styles.tag}>托管</span>}
             {info && !info.connected && info.kind === 'human' && <span className={styles.tag}>掉线</span>}
@@ -115,7 +128,7 @@ function SeatPanel(props: { v: View; seat: Seat; info: SeatInfo | undefined; sec
         </div>
       </div>
       <div className={styles.played}>
-        <RecentPlay v={v} seat={seat} />
+        <FlyingPlay v={v} seat={seat} from={() => who.current} />
         <Leftover v={v} seat={seat} />
       </div>
     </div>
@@ -210,6 +223,7 @@ export function Board(props: TurnUIProps<View, Action>) {
   const myTurn = seat !== null && v.phase === 'playing' && v.turn === seat;
   const myTribute = seat !== null && actingInTribute(v).includes(seat);
   const canAct = (myTurn || myTribute) && !pending;
+  const handRef = useRef<HTMLDivElement>(null);
 
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [hintIdx, setHintIdx] = useState(0);
@@ -331,7 +345,7 @@ export function Board(props: TurnUIProps<View, Action>) {
 
       <div className={styles.mine}>
         <div className={styles.myPlayed}>
-          <RecentPlay v={v} seat={me} />
+          <FlyingPlay v={v} seat={me} from={() => handRef.current} />
         </div>
 
         {result && (
@@ -393,7 +407,7 @@ export function Board(props: TurnUIProps<View, Action>) {
           </div>
         )}
 
-        <div className={[styles.myHand, myTurn || myTribute ? styles.turnGlow : ''].join(' ')}>
+        <div ref={handRef} className={[styles.myHand, myTurn || myTribute ? styles.turnGlow : ''].join(' ')}>
           {seat !== null ? (
             <>
               <div className={styles.myTag}>
@@ -406,7 +420,7 @@ export function Board(props: TurnUIProps<View, Action>) {
               {v.phase === 'handOver' || v.phase === 'ended' ? (
                 <Leftover v={v} seat={seat} />
               ) : (
-                <Hand cards={v.hand.map((c) => faceOf(c, v.level))} selected={selected} onChange={choose} />
+                <Hand key={v.handNo} deal cards={v.hand.map((c) => faceOf(c, v.level))} selected={selected} onChange={choose} />
               )}
             </>
           ) : (

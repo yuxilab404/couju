@@ -54,6 +54,12 @@ export interface TurnRules<S, A> {
   timer?(s: S): { ms: number; seats: Seat[]; key?: string } | null;
   /** 超时的默认动作；不提供则让 bot 替这个座位出 */
   onTimeout?(s: S, seat: Seat): A;
+  /**
+   * 进入这个局面后桌上要停多久（毫秒），让人看清刚发生的事（翻牌、结算一墩）。
+   * 平台在这段时间里不让 bot 出手，倒计时也顺延这么久；不提供就是 0。
+   * 只影响节奏，不进规则：回放和交接都不需要它。平台把它夹在 [0, 10000]。
+   */
+  pause?(s: S): number;
 }
 
 export interface RealtimeRules<S, I> {

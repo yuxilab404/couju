@@ -1,9 +1,9 @@
 /** 唬牌牌桌画面 */
-import { Card, CardBack, Hand, type CardFace, type Suit } from '@couju/kit-cards';
+import { Card, CardBack, FlipCard, FlyIn, Hand, motion, Pop, type CardFace, type Suit } from '@couju/kit-cards';
 import type { Seat, SeatInfo, TurnUIProps } from '@couju/sdk';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { FACE_LABEL, faceOf, type Face } from './cards.ts';
-import { MAX_PLAY, type Action, type Showdown, type View } from './rules.ts';
+import { MAX_PLAY, showdownTimeline, type Action, type Showdown, type View } from './rules.ts';
 import styles from './ui.module.css';
 
 function useNow(active: boolean): number {
@@ -54,12 +54,18 @@ function Avatar({ info }: { info: SeatInfo | undefined }) {
   );
 }
 
-/** 六个弹膛：扣过的变暗，出局的那一发标红 */
-function Revolver({ v, seat }: { v: View; seat: Seat }) {
+/** 六个弹膛：扣过的变暗，出局的那一发标红。刚扣过扳机（fresh）时转一圈，跟翻牌动画的"扣扳机"同一刻 */
+function Revolver({ v, seat, fresh }: { v: View; seat: Seat; fresh?: boolean }) {
   const shots = v.shots[seat];
   const dead = !v.alive[seat];
   return (
-    <span className={styles.gun} title={dead ? '中弹出局' : `已扣 ${shots} 次扳机，还剩 ${v.chambers - shots} 发`} data-shots={shots}>
+    <span
+      key={shots}
+      className={[styles.gun, fresh ? styles.gunFresh : ''].join(' ')}
+      style={fresh ? { ['--shot-at' as string]: `${showdownTimeline(v.showdowns[v.showdowns.length - 1]?.revealed.length ?? 1).shot}ms` } : undefined}
+      title={dead ? '中弹出局' : `已扣 ${shots} 次扳机，还剩 ${v.chambers - shots} 发`}
+      data-shots={shots}
+    >
       {Array.from({ length: v.chambers }, (_, i) => (
         <span
           key={i}
@@ -71,13 +77,25 @@ function Revolver({ v, seat }: { v: View; seat: Seat }) {
   );
 }
 
-function SeatPanel(props: { v: View; seat: Seat; info: SeatInfo | undefined; secondsLeft: number | null }) {
-  const { v, seat, info, secondsLeft } = props;
+function SeatPanel(props: {
+  v: View;
+  seat: Seat;
+  info: SeatInfo | undefined;
+  secondsLeft: number | null;
+  /** 刚翻完牌、这个座位是扣扳机的人 */
+  shooting: boolean;
+}) {
+  const { v, seat, info, secondsLeft, shooting } = props;
   const isTurn = v.phase !== 'ended' && v.turn === seat;
   const dead = !v.alive[seat];
   const mine = v.claims.filter((c) => c.seat === seat);
+  const last = v.claims[v.claims.length - 1];
+  const justPlayed = !!last && last.seat === seat;
   return (
-    <div className={[styles.seat, isTurn ? styles.turn : '', dead ? styles.dead : ''].join(' ')} data-seat={seat}>
+    <div
+      className={[styles.seat, isTurn ? styles.turn : '', isTurn ? motion.breathe : '', justPlayed ? styles.justPlayed : '', dead ? styles.dead : '', shooting && dead ? styles.dying : ''].join(' ')}
+      data-seat={seat}
+    >
       <div className={styles.who}>
         <Avatar info={info} />
         <div className={styles.meta}>
@@ -91,34 +109,106 @@ function SeatPanel(props: { v: View; seat: Seat; info: SeatInfo | undefined; sec
                 {v.counts[seat]}
               </span>
             )}
-            {isTurn && secondsLeft !== null && <span className={styles.clock}>{secondsLeft}</span>}
+            {isTurn && secondsLeft !== null && <Clock seconds={secondsLeft} />}
             {info?.kind === 'bot' && <span className={styles.tag}>电脑</span>}
             {info?.hosted && <span className={styles.tag}>托管中</span>}
             {info && !info.connected && info.kind === 'human' && <span className={styles.tag}>掉线</span>}
           </div>
         </div>
       </div>
-      <Revolver v={v} seat={seat} />
-      {mine.length > 0 && <div className={styles.claimLine}>本轮出了 {mine.map((c) => c.count).join(' + ')} 张</div>}
+      <Revolver v={v} seat={seat} fresh={shooting} />
+      {justPlayed && (
+        <Pop key={v.claims.length} className={styles.bubble}>
+          扣 {last.count} 张：“都是 {v.table}”
+        </Pop>
+      )}
+      {mine.length > 0 && !justPlayed && <div className={styles.claimLine}>本轮出了 {mine.map((c) => c.count).join(' + ')} 张</div>}
+      {isTurn && !justPlayed && <div className={styles.thinking}>想一想<span className={styles.dots} /></div>}
     </div>
   );
 }
 
-function ShowdownBanner({ v, d, name }: { v: View; d: Showdown; name: (s: Seat) => string }) {
+function Clock({ seconds }: { seconds: number }) {
+  return <span className={[styles.clock, seconds <= 5 ? motion.hurry : ''].join(' ')}>{seconds}</span>;
+}
+
+/**
+ * 翻牌：喊骗子 → 一张张翻开 → 判定 → 扣扳机。fresh = 刚发生的，按时间线一步步放；
+ * 刷新页面或中途进来时直接显示结果。时间线和规则里的 pause 是同一份（showdownTimeline），bot 等它放完再出手。
+ */
+function ShowdownBanner(props: { v: View; d: Showdown; name: (s: Seat) => string; fresh: boolean; big: boolean }) {
+  const { v, d, name, fresh, big } = props;
   const latest = v.showdowns.length;
+  const t = showdownTimeline(d.revealed.length);
+  const at = (ms: number) => ({ ['--at' as string]: `${fresh ? ms : 0}ms` });
   return (
-    <div key={latest} className={[styles.showdown, d.fired ? styles.fired : ''].join(' ')} role="status" data-showdown={latest}>
+    <div
+      key={latest}
+      className={[styles.showdown, d.fired ? styles.fired : '', fresh ? styles.fresh : '', big ? styles.big : ''].join(' ')}
+      style={{ ['--shot-at' as string]: `${fresh ? t.shot : 0}ms` }}
+      role="status"
+      data-showdown={latest}
+    >
       <div className={styles.sdHead}>
-        第 {d.round} 轮 · {name(d.accuser)} 喊 {name(d.accused)} 是骗子，翻开：
+        第 {d.round} 轮 · <b>{name(d.accuser)}</b>：“<span className={styles.sdCall}>{name(d.accused)}是骗子！</span>”翻开：
       </div>
       <div className={styles.sdCards}>
-        <Row cards={revealedFaces(d, `sd${latest}`)} />
-        <span className={d.lied ? styles.lied : styles.honest}>{d.lied ? `真有假牌（本轮 ${d.table}）` : `全是 ${d.table}，没骗人`}</span>
+        <span className={styles.row}>
+          {revealedFaces(d, `sd${latest}`).map((c, j) =>
+            fresh ? <FlipCard key={c.id} face={c} small delayMs={t.flip + j * t.flipGap} /> : <Card key={c.id} face={c} small />,
+          )}
+        </span>
+        <span className={[styles.step, d.lied ? styles.lied : styles.honest].join(' ')} style={at(t.verdict)}>
+          {d.lied ? `有假牌！本轮是 ${d.table}` : `全是 ${d.table}，没骗人`}
+        </span>
       </div>
       <div className={styles.sdShot}>
-        {name(d.shooter)} 扣第 {d.shot} 次扳机……
-        <b>{d.fired ? '砰！出局' : '咔哒，空枪'}</b>
+        <span className={styles.step} style={at(t.trigger)}>
+          {d.lied ? `${name(d.shooter)}撒谎被抓` : `${name(d.shooter)}冤枉了人`}，扣第 {d.shot} 次扳机……
+        </span>
+        <b className={[styles.step, styles.shotWord].join(' ')} style={at(t.shot)}>
+          {d.fired ? '砰！出局' : '咔哒，空枪'}
+        </b>
       </div>
+    </div>
+  );
+}
+
+/** 本轮桌上扣着的牌：每一手一叠，按出牌顺序排开；最新的一手从出牌人那边飞过来 */
+function Pile({ v, name, from }: { v: View; name: (s: Seat) => string; from: (s: Seat) => Element | null }) {
+  const last = v.claims[v.claims.length - 1];
+  const pile = v.claims.reduce((m, c) => m + c.count, 0);
+  if (!last) return <div className={styles.pileEmpty}>{v.phase === 'ended' ? '' : '还没人出牌'}</div>;
+  return (
+    <div className={styles.pile}>
+      <div className={styles.stacks}>
+        {v.claims.map((c, i) => {
+          const latest = i === v.claims.length - 1;
+          const stack = (
+            <>
+              <span className={styles.stack}>
+                {Array.from({ length: c.count }, (_, j) => (
+                  <CardBack key={j} small />
+                ))}
+              </span>
+              <span className={styles.stackWho}>{name(c.seat)}</span>
+            </>
+          );
+          return latest ? (
+            <FlyIn key={`${v.round}-${i}`} k={`${v.round}-${i}`} onMount from={() => from(c.seat)} className={[styles.stackBox, styles.latest].join(' ')}>
+              {stack}
+            </FlyIn>
+          ) : (
+            <div key={`${v.round}-${i}`} className={styles.stackBox}>
+              {stack}
+            </div>
+          );
+        })}
+      </div>
+      <div className={styles.claimNow} data-claim={v.claims.length}>
+        <b>{name(last.seat)}</b> 扣下 <b className={styles.claimCount}>{last.count}</b> 张，说都是 <b>{v.table}</b>
+      </div>
+      <div className={styles.dim}>桌上一共 {pile} 张</div>
     </div>
   );
 }
@@ -139,9 +229,20 @@ export function Board(props: TurnUIProps<View, Action>) {
   const handKey = `${v.round}|${v.hand.join()}`;
   useEffect(() => setSelected(new Set()), [handKey]);
 
+  // 进来时已经有的翻牌不再放动画；之后每次新翻牌都按时间线放一遍
+  const seenAtMount = useRef(v.showdowns.length);
+  const tableRef = useRef<HTMLDivElement>(null);
+  const handRef = useRef<HTMLDivElement>(null);
+  const seatEl = (s: Seat): Element | null =>
+    s === seat ? handRef.current : (tableRef.current?.querySelector(`[data-seat="${s}"]`) ?? null);
+
   const last = v.claims[v.claims.length - 1];
   const lastShowdown = v.showdowns[v.showdowns.length - 1];
-  const pile = v.claims.reduce((m, c) => m + c.count, 0);
+  const freshShowdown = !!lastShowdown && v.showdowns.length > seenAtMount.current;
+  // 刚翻完、新一轮还没人出牌：桌面中间先让给翻牌
+  const justRevealed = freshShowdown && v.claims.length === 0;
+  const shooter = freshShowdown ? lastShowdown.shooter : null;
+  const revealEnd = justRevealed ? showdownTimeline(lastShowdown.revealed.length).end : 0;
   const tooMany = selected.size > MAX_PLAY;
 
   const play = () => act({ type: 'play', cards: v.hand.filter((c) => selected.has(c)) });
@@ -151,54 +252,40 @@ export function Board(props: TurnUIProps<View, Action>) {
     if (!myTurn) return `等待 ${name(v.turn)}${secondsLeft !== null ? ` · ${secondsLeft} 秒` : ''}`;
     const what = v.mustCallLiar
       ? v.hand.length === 0
-        ? '你没牌了，只能翻上一手'
-        : '别人都没牌了，只能翻上一手'
+        ? `你没牌了，只能翻${name(last!.seat)}这一手`
+        : `别人都没牌了，只能翻${name(last!.seat)}这一手`
       : last
-        ? `接着出，或者喊${name(last.seat)}骗子`
-        : `你先出，说都是 ${v.table}`;
+        ? `${name(last.seat)}说这 ${last.count} 张都是 ${v.table}——接着出，或者喊骗子`
+        : `新一轮你先出，说都是 ${v.table}`;
     return `轮到你：${what}${secondsLeft !== null ? ` · ${secondsLeft} 秒` : ''}`;
   })();
 
   return (
-    <div className={styles.table}>
+    <div className={styles.table} ref={tableRef}>
       <div className={styles.opponents}>
         {others.map((s) => (
-          <SeatPanel key={s} v={v} seat={s} info={info(s)} secondsLeft={secondsLeft} />
+          <SeatPanel key={s} v={v} seat={s} info={info(s)} secondsLeft={secondsLeft} shooting={shooter === s} />
         ))}
       </div>
 
       <div className={styles.center}>
         <div className={styles.tableRank} aria-label={`本轮点数 ${v.table}`}>
           <span className={styles.dim}>第 {v.round} 轮 · 本轮说的都是</span>
-          <span className={styles.bigRank} data-table={v.table}>
-            {FACE_LABEL[v.table]}
-          </span>
+          <Pop key={v.round} delayMs={revealEnd}>
+            <span className={styles.bigRank} data-table={v.table}>
+              {FACE_LABEL[v.table]}
+            </span>
+          </Pop>
           <span className={styles.dim}>王算万能</span>
         </div>
-        <div className={styles.pile}>
-          {last ? (
-            <>
-              <div className={styles.backs}>
-                {Array.from({ length: last.count }, (_, i) => (
-                  <CardBack key={i} small />
-                ))}
-              </div>
-              <div>
-                {name(last.seat)} 扣下 {last.count} 张，说都是 {v.table}
-              </div>
-              <div className={styles.dim}>桌上一共 {pile} 张</div>
-            </>
-          ) : (
-            <div className={styles.dim}>{v.phase === 'ended' ? '' : '还没人出牌'}</div>
-          )}
-        </div>
+        <Pile v={v} name={name} from={seatEl} />
       </div>
 
-      {lastShowdown && <ShowdownBanner v={v} d={lastShowdown} name={name} />}
+      {lastShowdown && <ShowdownBanner v={v} d={lastShowdown} name={name} fresh={freshShowdown} big={justRevealed} />}
 
       <div className={styles.mine}>
         {result && (
-          <div className={styles.result}>
+          <div className={styles.result} style={{ ['--at' as string]: `${revealEnd}ms` }}>
             <div className={styles.resultTitle}>
               {seat !== null && result.winners.includes(seat) ? '你活到了最后' : seat !== null ? '你输了' : '本局结束'}
             </div>
@@ -229,17 +316,21 @@ export function Board(props: TurnUIProps<View, Action>) {
           </div>
         )}
 
-        <div className={[styles.myHand, myTurn ? styles.turnGlow : '', seat !== null && !v.alive[seat] ? styles.dead : ''].join(' ')}>
+        <div
+          ref={handRef}
+          className={[styles.myHand, myTurn ? styles.turnGlow : '', seat !== null && !v.alive[seat] ? styles.dead : ''].join(' ')}
+          data-myhand
+        >
           {seat !== null ? (
             <>
               <div className={styles.myTag}>
                 <Avatar info={info(seat)} />
                 <span>{info(seat)?.name ?? '我'}</span>
-                <Revolver v={v} seat={seat} />
+                <Revolver v={v} seat={seat} fresh={shooter === seat} />
                 {!v.alive[seat] && <span className={styles.outTag}>出局</span>}
               </div>
               {v.alive[seat] && v.hand.length > 0 && (
-                <Hand cards={v.hand.map(cardFace)} selected={selected} onChange={!v.mustCallLiar ? setSelected : undefined} />
+                <Hand key={v.round} deal cards={v.hand.map(cardFace)} selected={selected} onChange={!v.mustCallLiar ? setSelected : undefined} />
               )}
               {v.alive[seat] && v.hand.length === 0 && v.phase !== 'ended' && <div className={styles.dim}>手里没牌了</div>}
               {v.myPlays.length > 0 && (

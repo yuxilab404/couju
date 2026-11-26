@@ -29,8 +29,37 @@
   border: 2px solid transparent;
   background: rgba(0, 0, 0, 0.18);
 }
+.seat { transition: border-color 0.25s, background-color 0.25s, opacity 0.6s, filter 0.6s; position: relative; }
 .turn { border-color: #ffd54f; background: rgba(255, 213, 79, 0.1); }
+/* 刚出完牌的人：橙色描边，和"轮到谁"的黄色区分开 */
+.justPlayed { border-color: rgba(255, 138, 101, 0.85); }
 .dead { opacity: 0.45; filter: grayscale(0.7); }
+/* 刚中弹：等枪响那一刻再变灰 */
+.dying { transition-delay: 0s, 0s, var(--shot-at, 2800ms), var(--shot-at, 2800ms); }
+.bubble {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 700;
+  color: #3e2700;
+  background: #ffcc80;
+  padding: 2px 8px;
+  border-radius: 10px 10px 10px 2px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
+}
+.thinking { font-size: 12px; color: #ffe082; min-height: 16px; }
+.dots::after {
+  content: '';
+  display: inline-block;
+  width: 1.2em;
+  text-align: left;
+  animation: dots 1.2s steps(4, end) infinite;
+}
+@keyframes dots {
+  0% { content: ''; }
+  25% { content: '.'; }
+  50% { content: '..'; }
+  75% { content: '...'; }
+}
 .who { display: flex; align-items: center; gap: 6px; }
 .avatar {
   width: 34px;
@@ -81,6 +110,14 @@
 .spent { background: #2a1d10; border-color: #8d7a5c; }
 .gunText { font-size: 11px; opacity: 0.8; margin-left: 3px; font-variant-numeric: tabular-nums; }
 .bang { background: #e53935; border-color: #ff8a80; }
+/* 刚扣过扳机：弹巢转一圈，停在枪响那一刻 */
+.gunFresh .chamber { transition: background-color 0.3s var(--shot-at, 0ms), border-color 0.3s var(--shot-at, 0ms); }
+.gunFresh { animation: spin 0.8s cubic-bezier(.3, .6, .3, 1) calc(var(--shot-at, 0ms) - 800ms) both; }
+@keyframes spin {
+  from { transform: rotate(0); }
+  70% { transform: rotate(400deg); }
+  to { transform: rotate(360deg); }
+}
 
 .center { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; }
 .tableRank {
@@ -94,8 +131,28 @@
   font-size: 12px;
 }
 .bigRank { font-size: 40px; font-weight: 800; color: #ffd54f; line-height: 1.1; }
-.pile { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 80px; justify-content: center; text-align: center; }
-.backs { display: flex; gap: 4px; }
+.pile { display: flex; flex-direction: column; align-items: center; gap: 4px; min-height: 80px; justify-content: center; text-align: center; min-width: 0; max-width: 100%; }
+.pileEmpty { opacity: 0.75; min-height: 80px; display: flex; align-items: center; }
+/* 本轮每一手一叠，按顺序排开；越早的越淡 */
+.stacks { display: flex; gap: 10px; align-items: flex-end; justify-content: center; flex-wrap: wrap; max-width: 100%; }
+.stackBox {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  opacity: 0.55;
+  transition: opacity 0.3s;
+}
+.stackBox.latest { opacity: 1; }
+.stack { display: flex; flex-direction: row; }
+.stack > * + * { margin-left: -18px; }
+.stack > :nth-child(2) { transform: rotate(7deg); }
+.stack > :nth-child(3) { transform: rotate(14deg); }
+.stackWho { font-size: 11px; max-width: 64px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.latest .stackWho { color: #ffcc80; font-weight: 700; }
+.claimNow { font-size: 15px; }
+.claimNow b { color: #ffe082; }
+.claimCount { font-size: 20px; }
 
 .showdown {
   align-self: center;
@@ -112,12 +169,40 @@
   text-align: center;
   animation: pop 0.35s ease-out;
 }
-.fired { border-color: #e53935; animation: pop 0.35s ease-out, shake 0.4s 0.35s; }
+.showdown { position: relative; }
+.big { padding: 12px 18px; border-color: rgba(255, 213, 79, 0.5); box-shadow: 0 0 24px rgba(0, 0, 0, 0.5); }
+.showdown { transition: padding 0.3s, box-shadow 0.3s, border-color 0.3s; }
+.fired { border-color: #e53935; animation: pop 0.35s ease-out, shake 0.45s var(--shot-at, 0ms); }
+/* 枪响：整块闪一下红光 */
+.fresh.fired::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: radial-gradient(circle, rgba(255, 82, 82, 0.55), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+  animation: flash 0.6s ease-out var(--shot-at, 0ms);
+}
+@keyframes flash {
+  0% { opacity: 0; }
+  15% { opacity: 1; }
+  100% { opacity: 0; }
+}
+/* 翻牌的每一步按时间线依次出现 */
+.step { display: inline-block; animation: stepIn 0.35s cubic-bezier(.3, 1.5, .5, 1) var(--at, 0ms) both; }
+@keyframes stepIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+.sdCall { color: #ff8a80; font-weight: 800; }
+.fresh .sdCall { display: inline-block; animation: pop 0.35s ease-out; }
+.shotWord { margin-left: 4px; font-size: 16px; }
+.big .shotWord { font-size: 20px; }
+.fired .shotWord { color: #ff5252; }
 .sdCards { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .lied { color: #ff8a80; font-weight: 700; }
 .honest { color: #a5d6a7; font-weight: 700; }
-.sdShot b { margin-left: 4px; font-size: 16px; }
-.fired .sdShot b { color: #ff5252; }
 @keyframes pop { from { transform: scale(0.92); opacity: 0; } to { transform: none; opacity: 1; } }
 @keyframes shake {
   0%, 100% { transform: none; }
@@ -150,6 +235,7 @@
 .myPlays { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: center; font-size: 12px; }
 .row { display: inline-flex; gap: 3px; }
 .result {
+  animation: stepIn 0.4s ease-out var(--at, 0ms) both;
   background: rgba(0, 0, 0, 0.45);
   border-radius: 10px;
   padding: 10px 16px;
@@ -158,3 +244,8 @@
   box-sizing: border-box;
 }
 .resultTitle { font-size: 20px; font-weight: 700; color: #ffd54f; }
+
+@media (prefers-reduced-motion: reduce) {
+  .step, .result, .gunFresh, .fired, .fresh.fired::after, .dots::after, .sdCall { animation: none !important; }
+  .seat, .gunFresh .chamber { transition: none; }
+}
