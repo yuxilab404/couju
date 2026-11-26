@@ -2,7 +2,7 @@
  * 平台层自己的消息，装在 relay.data 里，服务端看不懂也不需要看懂（ARCHITECTURE.md §5）。
  */
 import type { Result, Seat } from '@couju/sdk';
-import type { MatchRating, UserId } from '@couju/protocol';
+import type { MatchRating, MatchReport, UserId } from '@couju/protocol';
 
 export type SeatSlot =
   | { kind: 'empty' }
@@ -73,6 +73,12 @@ export interface Checkpoint {
   scoreboard: Record<string, number>;
   round: number;
   game: GameEnvelope | null;
+  /**
+   * 已结束、服务端还没回执的积分上报（ADR-0007）。不只当前这局：断线时打完又开了下一局，
+   * 上一局的上报也在这里，换房主或刷新后接着报；服务端按 matchId 去重。
+   * TODO(del-when: 积分上线一周后，旧版本写的快照都已过期)：旧快照没有这个字段，按空处理
+   */
+  unrated?: MatchReport[];
 }
 
 export interface GameEnvelope {

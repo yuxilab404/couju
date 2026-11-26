@@ -284,3 +284,35 @@ describe('HostEngine 积分上报', () => {
     expect(io.reports).toEqual([first]);
   });
 });
+
+describe('HostEngine 积分上报跨交接', () => {
+  it('断线时打完、没报出去就开了下一局：未确认的上报进快照，新房主接着报', async () => {
+    const h = engine();
+    h.start();
+    await flush();
+    io.online = false;
+    for (let i = 0; i < 20 && io.lastSync(1)!.room.phase === 'playing'; i++) {
+      const turn = (io.lastSync(1)!.game!.view as { turn: number }).turn;
+      h.onRelay(turn + 1, { k: 'act', seq: i, action: { add: 2 } });
+      await vi.advanceTimersByTimeAsync(150);
+    }
+    expect(io.lastSync(1)!.room.phase).toBe('ended');
+    const oldMatch = JSON.parse(io.checkpoint).game.matchId;
+    h.rematch();
+    await flush();
+    expect(io.reports).toHaveLength(0);
+    const cp: Checkpoint = JSON.parse(io.checkpoint);
+    h.dispose();
+
+    io = new IO();
+    io.myId = 2;
+    const h2 = engine([member(1, false), member(2)], cp);
+    await flush();
+    expect(io.reports.map((r) => r.matchId)).toEqual([oldMatch]);
+    expect(JSON.parse(io.checkpoint).unrated.map((r: { matchId: string }) => r.matchId)).toEqual([oldMatch]);
+    // 收到回执后从快照里去掉
+    h2.onRatingResult({ matchId: oldMatch, changes: [] });
+    await flush();
+    expect(JSON.parse(io.checkpoint).unrated).toEqual([]);
+  });
+});

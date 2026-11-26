@@ -171,7 +171,7 @@ bot 的决定回来时局面可能已经变了（比如大模型思考了十秒�
 
 - 一局结束，房主按开局时的座位把 `winners` 里的真人和其余座位的真人分成两边，连同开局生成的 `matchId`、游戏给的 `weight` 发 `rating.report`。bot 不参与；没有真人赢或没有真人输就不报。
 - 服务端按两两比较的多人 Elo 算分（K=32，每场 `2K·weight/N`），写 `matches` 和 `rating_changes`，回 `rating.result` 给房主，并更新各房间成员列表里的积分。同一个 `matchId` 只记一次。
-- 房主把回执写进 `GameEnvelope.rating`，随 `sync` 发给所有人显示。没收到回执前结算里显示"积分结算中"；断线没发出去的重连后补发；换房主后新房主从快照恢复时再报一次，靠去重保证不重复计分。
+- 房主把回执写进 `GameEnvelope.rating`，随 `sync` 发给所有人显示。没收到回执前结算里显示"积分结算中"；断线没发出去的重连后补发。还没回执的上报都记在快照的 `unrated` 里（包括已经开了下一局的旧局），换房主或刷新后新房主接着报，靠去重保证不重复计分。
 - 新游戏什么都不用做就能计分；输赢有大小的游戏在 `Result.weight` 里给分量。
 
 快照格式（平台定义，服务端不解析）：
@@ -183,6 +183,7 @@ interface Checkpoint {
   state: unknown; rng: RngState; seq: number;
   scoreboard: Record<userId, number>;
   matchId: string; rating: MatchRating | null;  // 积分去重键和服务端回执（§4.6）
+  unrated: MatchReport[];                        // 已结束、还没收到回执的积分上报（§4.6）
 }
 ```
 

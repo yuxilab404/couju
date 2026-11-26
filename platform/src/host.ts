@@ -129,7 +129,8 @@ export class HostEngine {
   /** 服务端记完分了 */
   onRatingResult(r: MatchRating): void {
     if (this.disposed) return;
-    this.unrated.delete(r.matchId);
+    // 快照里的待报列表也跟着变
+    if (this.unrated.delete(r.matchId)) this.changed();
     const g = this.game;
     if (g && g.env.matchId === r.matchId && !g.env.rating) {
       g.env = { ...g.env, rating: r };
@@ -624,10 +625,13 @@ export class HostEngine {
       scoreboard: this.scoreboard,
       round: this.round,
       game: this.game ? this.game.env : null,
+      unrated: [...this.unrated.values()].map((u) => u.report),
     };
   }
 
   private restore(cp: Checkpoint): void {
+    // 上一任房主没等到回执的上报：先接过来，不管这个房间现在玩什么、能不能恢复
+    for (const r of cp.unrated ?? []) this.unrated.set(r.matchId, { report: r, sent: false });
     const def = findGame(this.registry, cp.config.gameId);
     if (!def) {
       this.io.notice?.('房间里的游戏在你的版本里不存在，请刷新页面');
