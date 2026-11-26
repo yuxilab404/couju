@@ -9,7 +9,8 @@ const dataDir = mkdtempSync(join(tmpdir(), 'couju-e2e-'));
 export default defineConfig({
   testDir: '.',
   testMatch: /.*\.spec\.ts/,
-  timeout: 120_000,
+  // 一条用例打完整一局：bot 有思考延迟、唬牌每次翻牌还要停 3 秒多（ADR-0008），5 人唬牌常要 2 分钟以上
+  timeout: 300_000,
   fullyParallel: false,
   workers: 1,
   // CI 上另出一份 HTML 报告传成 artifact：手机端每一屏的截图都在里面，PR 审查时点开就能看
