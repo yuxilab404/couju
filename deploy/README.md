@@ -48,6 +48,10 @@ ln -sfn releases/<旧构建号> /var/lib/couju/web/.t && mv -Tf /var/lib/couju/w
 docker stop couju && cp /var/lib/couju/backups/<文件> /var/lib/couju/data/couju.db && rm -f /var/lib/couju/data/couju.db-{wal,shm} && docker start couju
 ```
 
+## 数据变更记录
+
+- 2026-11-26：从签到系统白名单（`/opt/autosign/data/app.db`）一次性导入 8 个启用的朋友邮箱（管理员已在配置里，跳过）。备注写"<名字> · 从签到系统导入"，有名字的预先建好用户、昵称就是名字。没发邀请邮件。导入前备份：`backups/couju-20261126-211145-before-import.db`。之后两边各自维护，不自动同步。
+
 ## 配置项（`/var/lib/couju/env`）
 
 | 变量 | 说明 |
