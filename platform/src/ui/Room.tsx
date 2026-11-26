@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState, useSyncExternalStore, type Pointe
 import type { Member } from '@couju/protocol';
 import type { AnyGameDef, SeatInfo, TurnGameDef } from '@couju/sdk';
 import { findGame } from '../registry.ts';
-import { RoomSession, type RoomState } from '../session.ts';
+import { RoomSession, type GameState, type RoomState } from '../session.ts';
 import { scoreKey, type RoomPublic, type SeatSlot } from '../wire.ts';
 import { usePlatform } from './App.tsx';
 import { Avatar } from './Avatar.tsx';
@@ -277,6 +277,7 @@ function SlotView({ slot, member, seat }: { slot: SeatSlot; member: Member | und
       <span>
         {member?.nickname ?? '离开的玩家'}
         {member && !member.connected && <span className="muted small">（离线）</span>}
+        {member && <span className="muted small rating-tag">{member.rating} 分</span>}
       </span>
     </div>
   );
@@ -312,19 +313,7 @@ function Playing({ st, session, def }: { st: RoomState; session: RoomSession; de
             本局结束 <span className="muted small">（可拖动）</span>
           </h3>
           <p>{game.result.summary}</p>
-          {game.result.scores && (
-            <table>
-              <tbody>
-                {seats.map((s) => (
-                  <tr key={s.seat} className={game.result!.winners.includes(s.seat) ? 'win' : ''}>
-                    <td>{s.name}</td>
-                    <td className="num">{fmt(game.result!.scores![s.seat])}</td>
-                    <td className="num muted">累计 {fmt(room.scoreboard[scoreKey(room.seats[s.seat], s.seat)] ?? 0)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
+          <ResultTable room={room} game={game} seats={seats} />
           <div className="row">
             {st.amHost && session.engine ? (
               <>
@@ -340,6 +329,49 @@ function Playing({ st, session, def }: { st: RoomState; session: RoomSession; de
         </DraggableResult>
       )}
     </div>
+  );
+}
+
+/** 结算表：本局得分、房间累计、账号积分变化（ADR-0007） */
+function ResultTable({ room, game, seats }: { room: RoomPublic; game: GameState; seats: SeatInfo[] }) {
+  const result = game.result!;
+  const rating = game.rating;
+  const changes = rating && rating !== 'pending' ? new Map(rating.changes.map((c) => [c.userId, c])) : null;
+  const ratingCell = (slot: SeatSlot) => {
+    if (rating === null || slot.kind !== 'human') return <td />;
+    const ch = changes?.get(slot.userId);
+    if (!ch) return <td className="num muted">{rating === 'pending' ? '积分…' : ''}</td>;
+    const d = ch.after - ch.before;
+    return (
+      <td className="num">
+        积分 {ch.after}
+        <span className={d > 0 ? 'delta up' : d < 0 ? 'delta down' : 'delta'}>（{fmt(d)}）</span>
+      </td>
+    );
+  };
+  return (
+    <>
+      {(result.scores || rating !== null) && (
+        <table>
+          <tbody>
+            {seats.map((s) => (
+              <tr key={s.seat} className={result.winners.includes(s.seat) ? 'win' : ''}>
+                <td>{s.name}</td>
+                {result.scores && (
+                  <>
+                    <td className="num">{fmt(result.scores[s.seat])}</td>
+                    <td className="num muted">累计 {fmt(room.scoreboard[scoreKey(room.seats[s.seat], s.seat)] ?? 0)}</td>
+                  </>
+                )}
+                {ratingCell(room.seats[s.seat])}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {rating === 'pending' && <p className="muted small">积分结算中…</p>}
+      {rating === null && <p className="muted small">本局不计积分（要有真人赢、也有真人输才计）</p>}
+    </>
   );
 }
 

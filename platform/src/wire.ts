@@ -2,7 +2,7 @@
  * 平台层自己的消息，装在 relay.data 里，服务端看不懂也不需要看懂（ARCHITECTURE.md §5）。
  */
 import type { Result, Seat } from '@couju/sdk';
-import type { UserId } from '@couju/protocol';
+import type { MatchRating, UserId } from '@couju/protocol';
 
 export type SeatSlot =
   | { kind: 'empty' }
@@ -37,7 +37,11 @@ export interface GamePublic {
   /** 距截止还剩多少毫秒；接收方换算成本机时刻 */
   timer: { seats: Seat[]; remainingMs: number } | null;
   result: Result | null;
+  rating: RatingStatus;
 }
+
+/** 这局的账号积分：null = 不计分；'pending' = 已结束、等服务端记分；否则是服务端回的结果 */
+export type RatingStatus = MatchRating | 'pending' | null;
 
 /** 普通成员 → 房主 */
 export type ToHost =
@@ -81,6 +85,10 @@ export interface GameEnvelope {
   seq: number;
   /** 开局时座位后面是谁，结算记分用 */
   seatKeys: string[];
+  /** 开局时生成，上报积分时去重用（ADR-0007） */
+  matchId: string;
+  /** 服务端记完分回来的结果，下发给大家看 */
+  rating: MatchRating | null;
 }
 
 export function scoreKey(slot: SeatSlot, seat: Seat): string {

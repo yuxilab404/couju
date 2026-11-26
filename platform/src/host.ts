@@ -5,13 +5,14 @@
  */
 import { SeededRng, defaultOptions, type AnyGameDef, type Result, type Seat, type TurnGameDef } from '@couju/sdk';
 import { deepFreeze } from '@couju/sdk/testing.ts';
-import type { Member, UserId } from '@couju/protocol';
+import { RATING, type MatchRating, type MatchReport, type Member, type UserId } from '@couju/protocol';
 import {
   scoreKey,
   type Checkpoint,
   type GameEnvelope,
   type GamePublic,
   type LobbyMeta,
+  type RatingStatus,
   type RoomConfig,
   type RoomPhase,
   type RoomPublic,
@@ -30,6 +31,8 @@ export interface HostIO {
   deliverLocal(msg: ToMember): void;
   setMeta(meta: LobbyMeta): void;
   setCheckpoint(data: string): void;
+  /** 一局结束后上报输赢（ADR-0007）；返回是否发出去了，没发出去的重连后再发 */
+  reportRating(report: MatchReport): boolean;
   notice?(msg: string): void;
 }
 
@@ -74,6 +77,8 @@ export class HostEngine {
   private bots = new Map<Seat, AbortController>();
   private dirty = false;
   private disposed = false;
+  /** 已结束、还没收到服务端回执的局；sent=false 的在下次下发时发出 */
+  private unrated = new Map<string, { report: MatchReport; sent: boolean }>();
   private readonly botDelay: [number, number];
   private readonly hostedAfterMs: number;
   private readonly random: () => number;
@@ -119,6 +124,24 @@ export class HostEngine {
     this.syncHosted(false);
     this.changed();
     this.schedule();
+  }
+
+  /** 服务端记完分了 */
+  onRatingResult(r: MatchRating): void {
+    if (this.disposed) return;
+    this.unrated.delete(r.matchId);
+    const g = this.game;
+    if (g && g.env.matchId === r.matchId && !g.env.rating) {
+      g.env = { ...g.env, rating: r };
+      this.changed();
+    }
+  }
+
+  /** 和服务端的连接断过又连上：没回执的上报再发一次，快照和大厅摘要也补发 */
+  linkReset(): void {
+    if (this.disposed) return;
+    for (const u of this.unrated.values()) u.sent = false;
+    this.changed();
   }
 
   onRelay(from: UserId, data: unknown): void {
@@ -210,6 +233,8 @@ export class HostEngine {
         rng: rng.state(),
         seq: 0,
         seatKeys: this.seats.map(scoreKey),
+        matchId: this.newMatchId(),
+        rating: null,
       },
     };
     this.game.result = def.result(state);
@@ -332,7 +357,44 @@ export class HostEngine {
       const k = keys[seat];
       this.scoreboard = { ...this.scoreboard, [k]: (this.scoreboard[k] ?? 0) + d };
     });
+    this.queueRating();
     this.stopAll();
+  }
+
+  /**
+   * 这局要上报的输赢；不计分时为 null。按开局时的座位算：中途离开、托管的人照样计输赢。
+   * bot 不参与积分，所以至少要有一个真人赢、一个真人输。
+   */
+  private ratingReport(): MatchReport | null {
+    const g = this.game;
+    if (!g?.result || !g.env.matchId) return null;
+    const weight = Math.max(0, Math.min(RATING.maxWeight, Number(g.result.weight ?? 1) || 0));
+    const winners: UserId[] = [];
+    const losers: UserId[] = [];
+    g.env.seatKeys.forEach((k, seat) => {
+      if (!k.startsWith('u')) return;
+      (g.result!.winners.includes(seat) ? winners : losers).push(Number(k.slice(1)));
+    });
+    if (weight === 0 || winners.length === 0 || losers.length === 0) return null;
+    return { matchId: g.env.matchId, gameId: g.env.gameId, weight, winners, losers };
+  }
+
+  private queueRating(): void {
+    const g = this.game;
+    if (!g || g.env.rating) return;
+    const report = this.ratingReport();
+    if (report && !this.unrated.has(report.matchId)) this.unrated.set(report.matchId, { report, sent: false });
+  }
+
+  private ratingStatus(): RatingStatus {
+    const g = this.game;
+    if (!g || this.phase !== 'ended') return null;
+    return g.env.rating ?? (this.ratingReport() ? 'pending' : null);
+  }
+
+  private newMatchId(): string {
+    const part = () => Math.floor(this.random() * 2 ** 32).toString(16).padStart(8, '0');
+    return part() + part();
   }
 
   private maybeFreeze<T>(s: T): T {
@@ -491,6 +553,7 @@ export class HostEngine {
       this.broadcast();
       this.io.setCheckpoint(JSON.stringify(this.checkpoint()));
       this.io.setMeta(this.meta());
+      for (const u of this.unrated.values()) if (!u.sent) u.sent = this.io.reportRating(u.report);
     });
   }
 
@@ -516,6 +579,7 @@ export class HostEngine {
       seq: g.env.seq,
       timer: t ? { seats: t.seats, remainingMs: Math.max(0, t.deadline - Date.now()) } : null,
       result: g.result,
+      rating: this.ratingStatus(),
     };
   }
 
@@ -583,10 +647,18 @@ export class HostEngine {
       const turnDef = def as TurnGame;
       this.game = {
         def: turnDef,
-        env: { ...cp.game, state: this.maybeFreeze(cp.game.state) },
+        env: {
+          ...cp.game,
+          state: this.maybeFreeze(cp.game.state),
+          // TODO(del-when: 积分上线一周后，旧版本写的快照都已过期)：旧快照没有 matchId，这局不计积分
+          matchId: cp.game.matchId ?? '',
+          rating: cp.game.rating ?? null,
+        },
         rng: new SeededRng(cp.game.rng),
         result: turnDef.result(cp.game.state),
       };
+      // 上一任房主可能没来得及报或没收到回执：再报一次，服务端按 matchId 去重
+      if (this.phase === 'ended') this.queueRating();
     } else {
       this.phase = 'waiting';
     }

@@ -99,6 +99,8 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
   test.info().annotations.push({ type: '选牌后不要', description: passedWithSelection ? '本局走到了' : '本局没轮到' });
   // 两个对手剩下的牌摊在牌桌上
   await expect(page.locator('[data-leftover]')).toHaveCount(2);
+  // 只有一个真人：不计账号积分
+  await expect(page.locator('.result')).toContainText('本局不计积分');
   // 结算弹窗按住标题能拖走，不挡牌桌
   const dialog = page.getByRole('dialog', { name: '本局结束' });
   const before = (await dialog.boundingBox())!;
@@ -153,6 +155,8 @@ test('房主关掉页面，另一个人接手继续打', async ({ browser }) => 
   // 旧房主的座位被托管，新房主接着打完
   await playUntilEnd(friend);
   await expect(friend.getByRole('button', { name: '再来一局' })).toBeVisible();
+  // 两个真人：分在两边就记积分（托管的旧房主照样计输赢），同一边则不计
+  await expect(friend.locator('.result')).toContainText(/积分 1\d{3}（[+-]\d+）|本局不计积分/);
   await hostCtx.close();
   await friendCtx.close();
 });

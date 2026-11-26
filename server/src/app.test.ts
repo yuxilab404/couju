@@ -10,6 +10,7 @@ import type { ServerMsg } from '@couju/protocol';
 import { Accounts } from './accounts.ts';
 import { attachWebSocket, createApp } from './app.ts';
 import { Db } from './db.ts';
+import { Ratings } from './ratings.ts';
 import { Rooms } from './rooms.ts';
 import { FakeMailer, testConfig } from './testutil.ts';
 
@@ -23,9 +24,11 @@ beforeAll(async () => {
   writeFileSync(join(web, 'index.html'), '<!doctype html><title>凑局</title>');
   writeFileSync(join(web, 'version.json'), '{"buildId":"web123"}');
   const cfg = testConfig({ webDir: web });
-  const accounts = new Accounts(new Db(':memory:'), cfg, mailer);
-  const rooms = new Rooms();
-  const app = createApp({ cfg, accounts, rooms });
+  const db = new Db(':memory:');
+  const accounts = new Accounts(db, cfg, mailer);
+  const ratings = new Ratings(db);
+  const rooms = new Rooms({ ratings });
+  const app = createApp({ cfg, accounts, rooms, ratings });
   server = serve({ fetch: app.fetch, hostname: '127.0.0.1', port: 0 }) as Server;
   accounts.onSessionsRevoked = attachWebSocket(server, accounts, rooms).revalidate;
   await new Promise((r) => server.once('listening', r));
@@ -59,7 +62,8 @@ describe('挂在子路径下', () => {
     writeFileSync(join(web, 'index.html'), '<head><base href="/" /></head>');
     const cfg = testConfig({ webDir: web, baseUrl: 'https://x.test/game', basePath: '/game/' });
     const m = new FakeMailer();
-    const app = createApp({ cfg, accounts: new Accounts(new Db(':memory:'), cfg, m), rooms: new Rooms() });
+    const db = new Db(':memory:');
+    const app = createApp({ cfg, accounts: new Accounts(db, cfg, m), rooms: new Rooms(), ratings: new Ratings(db) });
     const page = await app.fetch(new Request('http://h/game/room/abc'));
     expect(await page.text()).toContain('<base href="/game/" />');
     expect((await app.fetch(new Request('http://h/game/index.html'))).status).toBe(200);
@@ -105,6 +109,15 @@ describe('HTTP + WS', () => {
       method: 'PATCH', headers: { cookie: adminCookie, 'content-type': 'application/json' }, body: JSON.stringify({ nickname: '老大' }),
     });
     expect((await r.json()).me.nickname).toBe('老大');
+  });
+
+  it('积分：资料里带当前积分，能查任何人的积分记录', async () => {
+    const me = (await (await fetch(`${base}/api/me`, { headers: { cookie: adminCookie } })).json()).me;
+    expect(me.rating).toBe(1200);
+    const r = await (await fetch(`${base}/api/ratings/${me.id}`, { headers: { cookie: adminCookie } })).json();
+    expect(r).toMatchObject({ user: { id: me.id, rating: 1200 }, games: 0, wins: 0, history: [] });
+    expect((await fetch(`${base}/api/ratings/99999`, { headers: { cookie: adminCookie } })).status).toBe(404);
+    expect((await fetch(`${base}/api/ratings/${me.id}`)).status).toBe(401);
   });
 
   it('管理员加白名单；被加的人能登录但不能管理白名单', async () => {

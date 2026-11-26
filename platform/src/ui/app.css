@@ -39,6 +39,10 @@ table { border-collapse: collapse; width: 100%; }
 td, th { padding: 6px 8px; border-bottom: 1px solid var(--line); text-align: left; }
 td.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.win td { font-weight: 600; }
+.delta { font-weight: 400; }
+.delta.up { color: var(--ok); }
+.delta.down { color: var(--error); }
+.rating-tag { margin-left: 6px; white-space: nowrap; }
 tr.disabled td { opacity: 0.5; }
 
 button {
