@@ -11,7 +11,7 @@ miao（4 核 / 3.4G）是唯一生产机，和牌手容器共用，实测空闲�
 1. **一个容器 `couju`**，镜像 = 官方 `node:24-alpine` + 打包好的 `server.mjs`，不装 `node_modules`。`--memory 256m --restart unless-stopped`，只监听 `127.0.0.1:8790`。预期常驻 60–100 MB。
 2. **数据目录 `/var/lib/couju`** 挂进容器：`couju.db`（SQLite）、`web/`（前端静态文件）、`env`（密钥，权限 600）。
 3. **前端不打进镜像。** 服务端从挂载目录读静态文件。只改前端时（加游戏、改画面），部署脚本把新文件解到 `web/releases/<sha>/`，再原子地切换 `web/current` 软链——进程不重启，进行中的房间不断。浏览器在下次刷新或换房主时拿到新版本；快照里的 `buildId` 防止新老版本混着当房主。
-4. **服务端有变化时才重建镜像、重启容器。** 重启前脚本查 `/api/health` 里的活跃房间数，等到 0（最多等 30 分钟，超时就放弃这次部署，下次再来；`--force` 可强制）。保留上一个镜像标签，回滚 = 用旧标签起容器。
+4. **服务端有变化时才重建镜像、重启容器。** ~~重启前脚本查 `/api/health` 里的活跃房间数，等到 0（最多等 30 分钟）~~ 已被 [ADR-0006](./0006-hot-update.md) 取代：不再等，房间表经交接文件带到新进程。保留上一个镜像标签，回滚 = 用旧标签起容器。
 5. **发布靠 miao 拉取，不靠 CI 推送**：GitHub Actions 在 `main` 合入后跑测试和端到端，把构建包（几百 KB 的 tar，含 `server.mjs`、前端、Dockerfile、部署脚本）发到名为 `deploy` 的 Release，每次覆盖。miao 上的 systemd 定时器每 2 分钟取一次 `BUILD_ID`，变了就下载、校验 sha256、执行包里的 `miao-deploy.sh`。镜像在 miao 上基于已有的 node 镜像构建，不经镜像仓库。
    - 这样不需要把 SSH 私钥放进 GitHub：仓库公开，Release 用 Actions 自带的 `GITHUB_TOKEN` 发布，miao 匿名下载。
    - 能往 `main` 合入的人就能部署，和 CI 推送方案一样。

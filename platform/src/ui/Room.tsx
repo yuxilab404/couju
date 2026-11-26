@@ -9,6 +9,7 @@ import { usePlatform } from './App.tsx';
 import { Avatar } from './Avatar.tsx';
 import { href } from '../base.ts';
 import { navigate } from './router.ts';
+import { tableActivity } from '../update.ts';
 
 const TEAM_COLORS = ['#e76f51', '#2a9d8f', '#8e7dbe', '#e9c46a'];
 
@@ -17,6 +18,12 @@ export function Room({ roomId }: { roomId: string | null }) {
   const session = useMemo(() => new RoomSession(conn, me.id, games, buildId, roomId), [conn, me.id, games, buildId, roomId]);
   useEffect(() => () => session.leave(), [session]);
   const st = useSyncExternalStore(session.state.subscribe, session.state.get);
+  // 对局中先不弹"有新版本"，这局打完再说
+  const playing = st.status === 'in' && st.room?.phase === 'playing';
+  useEffect(() => {
+    tableActivity.set({ playing });
+    return () => tableActivity.set({ playing: false });
+  }, [playing]);
 
   // 新建的房间拿到房号后改地址，方便复制给朋友
   useEffect(() => {

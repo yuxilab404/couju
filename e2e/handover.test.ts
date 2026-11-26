@@ -15,7 +15,7 @@ class Client implements Link {
   private msgFns = new Set<(m: ServerMsg) => void>();
   private openFns = new Set<() => void>();
   online = false;
-  constructor(private rooms: Rooms, public userId: number) {
+  constructor(public rooms: Rooms, public userId: number) {
     this.conn = this.makeConn();
   }
   private makeConn(): Conn {
@@ -184,5 +184,65 @@ describe('房间 + 交接', () => {
     await tick();
     expect(sa.state.get().status).toBe('gone');
     expect(sa.state.get().goneReason).toContain('不存在');
+  });
+
+  it('服务端重启（ADR-0006）：房间表交给新进程，大家重连后同一局接着打完；断线时点的操作不卡按钮', async () => {
+    let rooms = new Rooms({ hostGraceMs: 15_000 });
+    const clients = [new Client(rooms, 1), new Client(rooms, 2), new Client(rooms, 3)];
+    clients.forEach((c) => c.goOnline());
+    const [a, b, c] = clients;
+    const sa = new RoomSession(a, 1, [toy], 'v1', null, opts);
+    await tick();
+    const roomId = sa.state.get().roomId!;
+    const sb = new RoomSession(b, 2, [toy], 'v1', roomId, opts);
+    const sc = new RoomSession(c, 3, [toy], 'v1', roomId, opts);
+    await tick();
+    sa.engine!.start();
+    await tick();
+    const sessions = [sa, sb, sc];
+    const turnOf = () => (sa.state.get().game!.view as { turn: number }).turn;
+    // 走到轮到成员（不是房主）为止
+    for (let i = 0; i < 3 && turnOf() === 0; i++) {
+      sa.act({ add: 1 });
+      await tick();
+    }
+    const seq = sa.state.get().game!.seq;
+    const mover = sessions[turnOf()];
+
+    // 旧进程收到 SIGTERM：导出房间表，所有连接断开
+    const handoff = JSON.parse(JSON.stringify(rooms.exportState()));
+    clients.forEach((x) => x.goOffline());
+    // 断开期间成员点了一下：发不出去，按钮不能卡在"处理中"
+    mover.act({ add: 1 });
+    expect(mover.state.get().pending).toBe(false);
+    expect(mover.state.get().error).toContain('网络');
+
+    // 新进程读回；成员先连上，房主后到（各自的重连退避不同）
+    rooms = new Rooms({ hostGraceMs: 15_000 });
+    rooms.importState(handoff);
+    clients.forEach((x) => (x.rooms = rooms));
+    await tick(1_000);
+    b.goOnline();
+    c.goOnline();
+    await tick(2_000);
+    a.goOnline();
+    await tick();
+
+    for (const s of sessions) {
+      expect(s.state.get().status).toBe('in');
+      expect(s.state.get().hostId).toBe(1);
+      expect(s.state.get().game!.seq).toBe(seq);
+      expect(s.state.get().room!.phase).toBe('playing');
+    }
+    expect(sa.state.get().amHost).toBe(true);
+
+    // 同一局接着打完
+    for (let i = 0; i < 40 && sa.state.get().room!.phase === 'playing'; i++) {
+      const t = turnOf();
+      if (t < 3) sessions[t].act({ add: 2 });
+      await tick(60);
+    }
+    expect(sb.state.get().room!.phase).toBe('ended');
+    expect(sc.state.get().game!.result).not.toBeNull();
   });
 });
