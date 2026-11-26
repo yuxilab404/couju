@@ -1,5 +1,6 @@
 /**
- * 手机端：竖屏 + 触屏把登录、大厅、建房、打完一局斗地主走一遍，每一屏都检查有没有东西被挤出屏幕或裁掉。
+ * 手机端：竖屏 + 触屏把登录、大厅、建房和每个游戏的一整局走一遍，每一屏都检查有没有东西被挤出屏幕或裁掉。
+ * 新游戏上线时在这里补一条（AGENTS.md「上线前必须测手机端」）。
  * 由 playwright.config.ts 的 phone-* 项目按不同机型各跑一次。
  */
 import { expect, test, type Page } from '@playwright/test';
@@ -44,6 +45,19 @@ async function touchDrag(page: Page, from: { x: number; y: number }, to: { x: nu
   await cdp.detach();
 }
 
+async function login(page: Page, email: string) {
+  await page.goto('./');
+  await expectFits(page, '登录页');
+  await shot(page, '登录');
+  await page.getByLabel('邮箱').fill(email);
+  await page.getByRole('button', { name: '获取验证码' }).tap();
+  await expect(page.getByLabel('验证码')).toBeVisible();
+  const { code } = await (await page.request.get(`api/dev/last-code?email=${encodeURIComponent(email)}`)).json();
+  await page.getByLabel('验证码').fill(code);
+  await page.getByRole('button', { name: '登录', exact: true }).tap();
+  await expect(page.getByRole('heading', { name: '开一桌' })).toBeVisible();
+}
+
 /** 轮到自己就点：叫分阶段叫 3 分或不叫；出牌阶段按提示出，提示不了就不要 */
 async function tapUntilEnd(page: Page, maxSteps = 400) {
   const result = page.getByRole('heading', { name: '本局结束' });
@@ -73,17 +87,7 @@ async function tapUntilEnd(page: Page, maxSteps = 400) {
 }
 
 test('手机竖屏用手指从登录一路打完一局斗地主', async ({ page }, info) => {
-  const email = `${info.project.name}@e2e.test`;
-  await page.goto('./');
-  await expectFits(page, '登录页');
-  await shot(page, '登录');
-  await page.getByLabel('邮箱').fill(email);
-  await page.getByRole('button', { name: '获取验证码' }).tap();
-  await expect(page.getByLabel('验证码')).toBeVisible();
-  const { code } = await (await page.request.get(`api/dev/last-code?email=${encodeURIComponent(email)}`)).json();
-  await page.getByLabel('验证码').fill(code);
-  await page.getByRole('button', { name: '登录', exact: true }).tap();
-  await expect(page.getByRole('heading', { name: '开一桌' })).toBeVisible();
+  await login(page, `${info.project.name}@e2e.test`);
   await expectFits(page, '大厅');
   await shot(page, '大厅');
 
@@ -130,4 +134,50 @@ test('手机竖屏用手指从登录一路打完一局斗地主', async ({ page 
   await shot(page, '结算');
   await page.getByRole('button', { name: '再来一局' }).tap();
   await expect(page.getByRole('heading', { name: '本局结束' })).toBeHidden();
+});
+
+test('手机竖屏用手指打完一局吹牛轮盘（5 人桌）', async ({ page }, info) => {
+  await login(page, `${info.project.name}-lr@e2e.test`);
+  await page.getByRole('button', { name: '建房' }).tap();
+  await page.getByLabel('游戏').selectOption({ label: '吹牛轮盘' });
+  // 人数最多的桌：座位最挤
+  await page.getByLabel('人数').selectOption('5');
+  await expect(page.locator('.seats > *')).toHaveCount(5);
+  await expectFits(page, '吹牛轮盘房间');
+  await page.getByRole('button', { name: '开始' }).tap();
+
+  await expect(page.locator('[data-card][aria-pressed]')).toHaveCount(5);
+  await expectFits(page, '吹牛轮盘牌桌');
+  await shot(page, '吹牛轮盘牌桌');
+
+  const result = page.getByRole('heading', { name: '本局结束' });
+  const liar = page.getByRole('button', { name: '骗子！' });
+  const primary = page.getByRole('button', { name: /张出|^出 \d 张/ });
+  const pressed = page.locator('[data-card][aria-pressed="true"]');
+  let played = 0;
+  let called = 0;
+  let checkedPlay = false;
+  for (let i = 0; i < 600 && !(await result.isVisible()); i++) {
+    const canLiar = await liar.isVisible();
+    const canPlay = await primary.isVisible();
+    if (canLiar && (!canPlay || called < played)) {
+      await liar.tap();
+      called++;
+    } else if (canPlay) {
+      if ((await pressed.count()) === 0) await page.locator('[data-card][aria-pressed]').first().tap({ position: { x: 4, y: 20 } });
+      await expect(pressed).toHaveCount(1);
+      if (!checkedPlay) {
+        checkedPlay = true;
+        await expectFits(page, '吹牛轮盘出牌');
+        await shot(page, '吹牛轮盘出牌');
+      }
+      await page.getByRole('button', { name: /^出 1 张/ }).tap();
+      played++;
+    }
+    await page.waitForTimeout(250);
+  }
+  await expect(result).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '本局结束' })).toBeInViewport({ ratio: 1 });
+  await expectFits(page, '吹牛轮盘结算');
+  await shot(page, '吹牛轮盘结算');
 });

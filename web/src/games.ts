@@ -4,5 +4,6 @@
  */
 import type { GameRegistry } from '@couju/platform';
 import doudizhu from '@couju/game-doudizhu';
+import liarRoulette from '@couju/game-liar-roulette';
 
-export const games: GameRegistry = [doudizhu];
+export const games: GameRegistry = [doudizhu, liarRoulette];
