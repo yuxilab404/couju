@@ -1,0 +1,203 @@
+/* 深紫绒布桌，金色筹码；颜色和造型都是自己画的 */
+.table {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-width: 960px;
+  margin: 0 auto;
+  min-height: min(100%, 640px);
+  padding: 10px 12px 12px;
+  box-sizing: border-box;
+  color: #f3ecff;
+  background: radial-gradient(ellipse at center, #4a2f78 0%, #33205a 70%, #241641 100%);
+  border-radius: 12px;
+  font-size: 14px;
+}
+.dim { opacity: 0.75; }
+
+.opponents { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.seat {
+  flex: 1 1 140px;
+  max-width: 220px;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-radius: 10px;
+  border: 2px solid transparent;
+  background: rgba(0, 0, 0, 0.2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  position: relative;
+  transition: border-color 0.25s, background-color 0.25s, opacity 0.5s, filter 0.5s;
+}
+.turn { border-color: #ffd54f; background: rgba(255, 213, 79, 0.1); }
+.justActed { border-color: rgba(255, 138, 101, 0.85); }
+.out { opacity: 0.5; filter: grayscale(0.6); }
+.winner { border-color: #ffca28; box-shadow: 0 0 16px rgba(255, 202, 40, 0.45); opacity: 1; filter: none; }
+.pickable { cursor: pointer; border-color: #ff8a80; border-style: dashed; animation: pick 1s ease-in-out infinite alternate; }
+@keyframes pick { from { background: rgba(255, 138, 128, 0.08); } to { background: rgba(255, 138, 128, 0.25); } }
+
+.who { display: flex; align-items: center; gap: 6px; }
+.avatar {
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-weight: 700;
+  flex: none;
+}
+.meta { min-width: 0; }
+.name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dealer {
+  display: inline-block;
+  margin-left: 4px;
+  font-size: 11px;
+  padding: 0 4px;
+  border-radius: 4px;
+  background: #ffca28;
+  color: #3e2700;
+  font-weight: 700;
+  vertical-align: 1px;
+}
+.tags { display: flex; gap: 4px; font-size: 12px; flex-wrap: wrap; align-items: center; }
+.tag { background: rgba(0, 0, 0, 0.3); padding: 0 6px; border-radius: 8px; }
+.status { padding: 0 6px; border-radius: 8px; background: rgba(255, 255, 255, 0.15); font-weight: 600; font-size: 12px; }
+.seenTag { background: #5c6bc0; }
+.outTag { background: #6d1b1b; color: #ffcdd2; }
+.clock {
+  background: #ffd54f;
+  color: #3e2700;
+  font-weight: 700;
+  border-radius: 10px;
+  padding: 0 6px;
+  min-width: 14px;
+  text-align: center;
+}
+
+.seatRow { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
+.cards { display: inline-flex; gap: 3px; }
+.bet { display: inline-flex; align-items: center; gap: 4px; font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.chip {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #ffe082 0 35%, #ffb300 36% 60%, #fff3c4 61% 70%, #ffb300 71%);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+  flex: none;
+}
+.kind { font-size: 12px; color: #ffe082; font-weight: 600; min-height: 16px; }
+.bubble {
+  align-self: flex-start;
+  font-size: 12px;
+  font-weight: 700;
+  color: #2a1a45;
+  background: rgba(255, 255, 255, 0.7);
+  padding: 2px 8px;
+  border-radius: 10px 10px 10px 2px;
+  max-width: 100%;
+  box-sizing: border-box;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.bubbleNew { background: #ffcc80; color: #3e2700; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3); }
+.crown { font-size: 12px; font-weight: 800; color: #3e2700; background: #ffca28; padding: 1px 8px; border-radius: 10px; align-self: flex-start; }
+
+.center { display: flex; gap: 16px; align-items: center; justify-content: center; flex-wrap: wrap; }
+.pot {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 18px;
+  border-radius: 14px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 213, 79, 0.35);
+  font-size: 12px;
+}
+.potNum { font-size: 34px; font-weight: 800; color: #ffd54f; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.info { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.info b { color: #ffe082; font-size: 16px; }
+
+.compare, .chain {
+  align-self: center;
+  max-width: 100%;
+  box-sizing: border-box;
+  padding: 8px 14px;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.35);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+  text-align: center;
+  animation: pop 0.35s ease-out;
+}
+.fresh { border-color: rgba(255, 213, 79, 0.6); box-shadow: 0 0 24px rgba(0, 0, 0, 0.5); }
+.cmpHead { font-weight: 700; }
+.cmpBody { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center; }
+.side { display: flex; flex-direction: column; align-items: center; gap: 4px; min-width: 0; transition: opacity 0.4s, filter 0.4s; }
+.loserSide { opacity: 0.55; filter: grayscale(0.6); }
+.fresh .loserSide { transition-delay: var(--at, 1300ms); }
+.vs { font-weight: 900; font-size: 18px; color: #ff8a80; }
+.verdict { color: #ff8a80; font-size: 15px; }
+.step { display: inline-block; animation: stepIn 0.35s cubic-bezier(.3, 1.5, .5, 1) var(--at, 0ms) both; }
+@keyframes stepIn {
+  from { opacity: 0; transform: translateY(6px) scale(0.85); }
+  to { opacity: 1; transform: none; }
+}
+@keyframes pop { from { transform: scale(0.92); opacity: 0; } to { transform: none; opacity: 1; } }
+.chain { font-size: 13px; gap: 2px; }
+
+.mine { display: flex; flex-direction: column; align-items: center; gap: 8px; margin-top: auto; }
+.statusLine { display: flex; gap: 12px; min-height: 20px; flex-wrap: wrap; justify-content: center; text-align: center; }
+.myTurn { color: #ffd54f; font-weight: 700; }
+.error { color: #ffab91; }
+.actions, .subActions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.actions button, .subActions button {
+  font-size: 16px;
+  padding: 8px 16px;
+  border-radius: 20px;
+  border: none;
+  background: #ede7f6;
+  color: #2a1a45;
+  cursor: pointer;
+  min-width: 64px;
+}
+.subActions button { font-size: 14px; padding: 6px 12px; background: #d1c4e9; }
+.actions button[aria-pressed='true'] { background: #b39ddb; }
+.actions button.primary { background: #ffb300; color: #3e2700; font-weight: 700; }
+.actions button.look { background: #5c6bc0; color: #fff; font-weight: 700; }
+.actions button.fold { background: #6d1b1b; color: #fff; }
+.actions button:disabled { opacity: 0.4; cursor: default; }
+.myHand { width: 100%; padding: 6px 0; border-radius: 10px; border: 2px solid transparent; display: flex; flex-direction: column; gap: 6px; align-items: center; }
+.turnGlow { border-color: rgba(255, 213, 79, 0.6); }
+.myTag { display: flex; align-items: center; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.myTag .avatar { width: 28px; height: 28px; font-size: 13px; }
+.myCards { display: flex; justify-content: center; }
+.myCards .cards { gap: 6px; }
+.result {
+  animation: stepIn 0.4s ease-out var(--at, 0ms) both;
+  background: rgba(0, 0, 0, 0.45);
+  border-radius: 10px;
+  padding: 10px 16px;
+  text-align: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+.resultTitle { font-size: 20px; font-weight: 700; color: #ffd54f; }
+
+@media (prefers-reduced-motion: reduce) {
+  .step, .result, .compare, .chain, .pickable { animation: none !important; }
+  .seat, .side { transition: none; }
+}
