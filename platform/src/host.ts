@@ -43,6 +43,8 @@ export interface HostOptions {
   hostedAfterMs?: number;
   random?: () => number;
   freeze?: boolean;
+  /** 开局时打乱座位（默认开）。只有要按固定座位断言的测试才关 */
+  shuffleSeats?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -88,6 +90,7 @@ export class HostEngine {
   private readonly hostedAfterMs: number;
   private readonly random: () => number;
   private readonly freeze: boolean;
+  private readonly shuffleSeats: boolean;
 
   constructor(
     private registry: GameRegistry,
@@ -100,6 +103,7 @@ export class HostEngine {
     this.hostedAfterMs = opts.hostedAfterMs ?? 30_000;
     this.random = opts.random ?? Math.random;
     this.freeze = opts.freeze ?? false;
+    this.shuffleSeats = opts.shuffleSeats ?? true;
     for (const m of members) this.members.set(m.id, m);
 
     const first = registry[0];
@@ -201,14 +205,6 @@ export class HostEngine {
     this.changed();
   }
 
-  swapSeats(a: Seat, b: Seat): void {
-    if (this.phase !== 'waiting') return;
-    const s = [...this.seats];
-    [s[a], s[b]] = [s[b], s[a]];
-    this.seats = s;
-    this.changed();
-  }
-
   canStart(): string | null {
     if (this.phase !== 'waiting') return '已经开始了';
     const def = this.currentDef();
@@ -221,8 +217,9 @@ export class HostEngine {
   start(): void {
     if (this.canStart() !== null) return;
     const def = this.currentDef() as TurnGame;
-    // 空座按 bot 补满
+    // 空座按 bot 补满，再随机排座：等人时坐哪儿只决定谁上桌，不决定开局的座位
     this.seats = this.seats.map((s) => (s.kind === 'empty' ? { kind: 'bot' } : s));
+    if (this.shuffleSeats) this.seats = this.shuffled(this.seats);
     const seed = Math.floor(this.random() * 2 ** 32);
     const rng = SeededRng.fromSeed(seed);
     const numPlayers = this.seats.length;
@@ -421,6 +418,15 @@ export class HostEngine {
     const g = this.game;
     if (!g || this.phase !== 'ended') return null;
     return g.env.rating ?? (this.ratingReport() ? 'pending' : null);
+  }
+
+  private shuffled<T>(xs: T[]): T[] {
+    const a = [...xs];
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(this.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
   }
 
   private newMatchId(): string {
