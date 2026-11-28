@@ -169,7 +169,6 @@ function Waiting({ st, session, def }: { st: RoomState; session: RoomSession; de
   const mm = memberMap(st.members);
   const mySeat = room.seats.findIndex((s) => s.kind === 'human' && s.userId === me.id);
   const teams = def.teams?.(room.seats.length);
-  const [swapFrom, setSwapFrom] = useState<number | null>(null);
   const standing = st.members.filter((m) => !room.seats.some((s) => s.kind === 'human' && s.userId === m.id));
   const startBlock = engine?.canStart() ?? null;
 
@@ -233,6 +232,7 @@ function Waiting({ st, session, def }: { st: RoomState; session: RoomSession; de
 
       <section className="card">
         <h3>座位</h3>
+        <p className="muted small">开局时随机排座：这里只决定谁上桌、谁旁观，不决定坐哪儿</p>
         <div className="seats">
           {room.seats.map((slot, i) => {
             const m = slot.kind === 'human' ? mm.get(slot.userId) : undefined;
@@ -240,7 +240,7 @@ function Waiting({ st, session, def }: { st: RoomState; session: RoomSession; de
             return (
               <div
                 key={i}
-                className={`seat ${swapFrom === i ? 'selected' : ''}`}
+                className="seat"
                 style={team !== undefined ? { borderColor: TEAM_COLORS[team % TEAM_COLORS.length] } : undefined}
               >
                 <div className="seat-no">
@@ -268,20 +268,6 @@ function Waiting({ st, session, def }: { st: RoomState; session: RoomSession; de
                       {slot.kind !== 'empty' && !(slot.kind === 'human' && slot.userId === me.id) && (
                         <button className="small" onClick={() => engine.setSlot(i, { kind: 'empty' })}>
                           {slot.kind === 'bot' ? '撤掉' : '请下座'}
-                        </button>
-                      )}
-                      {room.seats.length > 1 && (
-                        <button
-                          className="small"
-                          onClick={() => {
-                            if (swapFrom === null) setSwapFrom(i);
-                            else {
-                              if (swapFrom !== i) engine.swapSeats(swapFrom, i);
-                              setSwapFrom(null);
-                            }
-                          }}
-                        >
-                          {swapFrom === null ? '换座' : swapFrom === i ? '取消' : '换到这'}
                         </button>
                       )}
                     </>
