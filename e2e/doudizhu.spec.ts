@@ -103,6 +103,8 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
   await expect(page.locator('.result')).toContainText('本局不计积分');
   // 结算弹窗按住标题能拖走，不挡牌桌
   const dialog = page.getByRole('dialog', { name: '本局结束' });
+  // 弹窗有 0.35 秒的上浮入场动画，没放完就量位置会少算几像素
+  await page.locator('.result-overlay').evaluate((el) => Promise.all(el.getAnimations().map((a) => a.finished)));
   const before = (await dialog.boundingBox())!;
   const title = (await page.getByRole('heading', { name: '本局结束' }).boundingBox())!;
   await page.mouse.move(title.x + 20, title.y + title.height / 2);
