@@ -2,6 +2,7 @@ import { defineTurnGame } from '@couju/sdk';
 import { bot } from './bot.ts';
 import * as rules from './rules.ts';
 import type { Action, Options, State, View } from './rules.ts';
+import { Rules } from './howto.tsx';
 import { Board } from './ui.tsx';
 
 export type { Action, Options, State, View } from './rules.ts';
@@ -46,6 +47,7 @@ const guandan = defineTurnGame<State, Action, View, Options>({
   privateTokens: rules.privateTokens,
   bot,
   ui: Board,
+  rules: Rules,
 });
 
 export default guandan;

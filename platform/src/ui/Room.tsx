@@ -65,6 +65,7 @@ function myPlayingSeat(st: RoomState): { seat: number; hosted: boolean } | null 
 
 function RoomBar({ st, def, session }: { st: RoomState; def: AnyGameDef | undefined; session: RoomSession }) {
   const [copied, setCopied] = useState(false);
+  const [rulesOpen, setRulesOpen] = useState(false);
   const host = st.members.find((m) => m.id === st.hostId);
   const mine = myPlayingSeat(st);
   return (
@@ -85,6 +86,12 @@ function RoomBar({ st, def, session }: { st: RoomState; def: AnyGameDef | undefi
       >
         {copied ? '已复制' : '复制邀请链接'}
       </button>
+      {def && (
+        <button className="small" aria-haspopup="dialog" onClick={() => setRulesOpen(true)}>
+          规则
+        </button>
+      )}
+      {def && rulesOpen && <RulesDialog st={st} def={def} onClose={() => setRulesOpen(false)} />}
       <span className="spacer" />
       {/* 托管中时"取消托管"在牌桌上方的提示条里 */}
       {mine && !mine.hosted && (
@@ -95,6 +102,41 @@ function RoomBar({ st, def, session }: { st: RoomState; def: AnyGameDef | undefi
       <button className="small" onClick={() => navigate('/')}>
         离开
       </button>
+    </div>
+  );
+}
+
+/**
+ * 规则弹窗（ADR-0010）：画游戏自己的 rules 组件。等人时和对局中都能开，对局中带上我的视图。
+ * 点遮罩、"关闭"或按 Esc 关掉；内容长时弹窗里面滚动，手机上占满宽度。
+ */
+function RulesDialog({ st, def, onClose }: { st: RoomState; def: AnyGameDef; onClose: () => void }) {
+  const room = st.room!;
+  const closeRef = useRef<HTMLButtonElement>(null);
+  // 对局中房间状态一直在变、onClose 每次都是新的：用 ref 拿最新的，打开时只聚焦一次
+  const close = useRef(onClose);
+  close.current = onClose;
+  useEffect(() => {
+    closeRef.current?.focus();
+    const onKey = (e: KeyboardEvent) => e.key === 'Escape' && close.current();
+    addEventListener('keydown', onKey);
+    return () => removeEventListener('keydown', onKey);
+  }, []);
+  const RulesDoc = def.rules;
+  const view = room.phase !== 'waiting' ? (st.game?.view ?? null) : null;
+  return (
+    <div className="rules-overlay" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="card rules-dialog" role="dialog" aria-modal="true" aria-label={`${def.name}规则`}>
+        <div className="rules-head">
+          <h3>{def.name} · 规则</h3>
+          <button ref={closeRef} className="small" onClick={onClose}>
+            关闭
+          </button>
+        </div>
+        <div className="rules-doc">
+          <RulesDoc numPlayers={room.seats.length} options={room.config.options} view={view} />
+        </div>
+      </div>
     </div>
   );
 }

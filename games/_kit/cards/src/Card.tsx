@@ -72,3 +72,17 @@ export function Card({ face, selected, small, interactive }: CardProps) {
 export function CardBack({ small }: { small?: boolean }) {
   return <div className={[styles.card, styles.back, small ? styles.small : ''].join(' ')} />;
 }
+
+/**
+ * 一小排静态的小牌，左对齐、略微叠着（规则说明里举例用）。不能选，不随容器拉伸。
+ * 张数多时叠得更紧，10 张在 360 宽的手机上也放得下。
+ */
+export function CardRow({ faces, label }: { faces: CardFace[]; label?: string }) {
+  return (
+    <span className={styles.cardRow} data-tight={faces.length > 6 ? '' : undefined} role="img" aria-label={label}>
+      {faces.map((f, i) => (
+        <Card key={`${f.id}-${i}`} face={f} small />
+      ))}
+    </span>
+  );
+}

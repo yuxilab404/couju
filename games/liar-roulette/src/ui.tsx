@@ -17,7 +17,7 @@ function useNow(active: boolean): number {
 }
 
 const SUITS: Suit[] = ['S', 'H', 'C', 'D'];
-function cardFace(id: string): CardFace {
+export function cardFace(id: string): CardFace {
   const f = faceOf(id);
   const i = Number(id.slice(1)) || 0;
   if (f === 'W') return { id, label: '王', suit: i % 2 ? 'JR' : 'JB' };

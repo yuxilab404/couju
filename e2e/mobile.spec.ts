@@ -45,6 +45,21 @@ async function touchDrag(page: Page, from: { x: number; y: number }, to: { x: nu
   await cdp.detach();
 }
 
+/** 点"规则"打开规则弹窗：弹窗整个在屏幕里、放得下、能滚到底，再关掉 */
+async function checkRules(page: Page, game: string, where: string, mustSee: string) {
+  await page.getByRole('button', { name: '规则', exact: true }).tap();
+  const dialog = page.getByRole('dialog', { name: `${game}规则` });
+  await expect(dialog).toBeInViewport({ ratio: 1 });
+  await expect(dialog).toContainText(mustSee);
+  await expectFits(page, where);
+  await shot(page, where);
+  await dialog.getByText(mustSee).first().scrollIntoViewIfNeeded();
+  await expectFits(page, `${where}（滚到${mustSee}）`);
+  await shot(page, `${where}（滚到${mustSee}）`);
+  await dialog.getByRole('button', { name: '关闭' }).tap();
+  await expect(dialog).toBeHidden();
+}
+
 async function login(page: Page, email: string) {
   await page.goto('./');
   await expectFits(page, '登录页');
@@ -112,6 +127,7 @@ test('手机竖屏用手指从登录一路打完一局斗地主', async ({ page 
   await expect(page.getByText('空位会自动放机器人')).toBeVisible();
   await expectFits(page, '房间');
   await shot(page, '房间');
+  await checkRules(page, '斗地主', '斗地主规则', '王炸');
   await page.getByRole('button', { name: '开始' }).tap();
 
   const hand = page.locator('[data-card][aria-pressed]');
@@ -174,6 +190,7 @@ test('手机竖屏用手指打完一局唬牌（5 人桌）', async ({ page }, i
   await expect(page.locator('[data-card][aria-pressed]')).toHaveCount(5);
   await expectFits(page, '唬牌牌桌');
   await shot(page, '唬牌牌桌');
+  await checkRules(page, '唬牌', '唬牌规则', '必响');
 
   const result = page.getByRole('heading', { name: '本局结束' });
   const liar = page.getByRole('button', { name: '骗子！' });
@@ -221,6 +238,7 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
   await expect(page.getByText('队伍 2').first()).toBeVisible();
   await expectFits(page, '掼蛋房间');
   await shot(page, '掼蛋房间');
+  await checkRules(page, '掼蛋', '掼蛋规则', '10 张炸弹');
   await page.getByRole('button', { name: '开始' }).tap();
 
   const hand = page.locator('[data-card][aria-pressed]');
@@ -228,6 +246,8 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
   await expect(page.getByLabel('记牌器').locator('[data-rank]')).toHaveCount(15);
   await expectFits(page, '掼蛋牌桌');
   await shot(page, '掼蛋牌桌');
+  // 对局中打开：写的是本副打几
+  await checkRules(page, '掼蛋', '掼蛋对局中规则', '现在是第 1 副');
 
   // 27 张叠在竖屏里也能用手指点中、划选
   const pressed = page.locator('[data-card][aria-pressed="true"]');
