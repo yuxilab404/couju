@@ -8,6 +8,7 @@ import type { Seat } from '@couju/sdk';
 import { countNatural, isWild, rankOf, suitOf, SUITS, valueOf, valueOfRank, wildsOf } from './cards.ts';
 import { beats, interpret, isBomb, parse, rankAt, strength, type Kind, type Pattern } from './patterns.ts';
 import { outstanding } from './counter.ts';
+import { chooseOpening } from './opening.ts';
 import { partnerOf, returnable, tributeValue, type Action, type View } from './rules.ts';
 
 /** 拆牌里的一手：ranks 是每张牌的自然点数（A = 14），用到配牌时也写它当的点数 */
@@ -24,6 +25,25 @@ export interface Move {
 
 const NODE_LIMIT = 1500;
 const BOMB_BREAK = 2;
+// 推演里同一手牌会以不同花色/顺序反复出现；拆牌只取决于点数。
+// 有界缓存避免长时间开着牌桌时持续占内存。缓存结果只在内部读取，对外返回副本。
+const PLAN_CACHE_LIMIT = 4096;
+const planCache = new Map<string, Combo[]>();
+const handPlanCache = new Map<string, Combo[]>();
+
+function countKey(cnt: readonly number[], level: number, wilds = 0): string {
+  return String.fromCharCode(level, wilds, ...cnt.slice(2, 18));
+}
+
+function remember(cache: Map<string, Combo[]>, key: string, combos: Combo[]): Combo[] {
+  if (cache.size >= PLAN_CACHE_LIMIT) cache.delete(cache.keys().next().value!);
+  cache.set(key, combos);
+  return combos;
+}
+
+function copyPlan(combos: readonly Combo[]): Combo[] {
+  return combos.map((c) => ({ ...c, ranks: c.ranks.slice() }));
+}
 
 function rep(r: number, k: number): number[] {
   return new Array<number>(k).fill(r);
@@ -33,6 +53,13 @@ function rep(r: number, k: number): number[] {
 
 /** 把点数计数（下标 2..17，配牌已经换成它要当的点数）拆成若干手 */
 export function plan(cnt0: readonly number[], level: number): Combo[] {
+  return copyPlan(cachedPlan(cnt0, level));
+}
+
+function cachedPlan(cnt0: readonly number[], level: number): Combo[] {
+  const key = countKey(cnt0, level);
+  const cached = planCache.get(key);
+  if (cached) return cached;
   const v = (r: number) => valueOfRank(r, level);
   const cnt = cnt0.slice();
   const fixed: Combo[] = [];
@@ -96,7 +123,7 @@ export function plan(cnt0: readonly number[], level: number): Combo[] {
   };
   dfs(1);
   const b = best!;
-  return [...groups(b.chains, b.left, level), ...fixed];
+  return remember(planCache, key, [...groups(b.chains, b.left, level), ...fixed]);
 }
 
 function leafCost(chains: Combo[], left: number[], level: number): number {
@@ -141,25 +168,33 @@ export function planCost(combos: readonly Combo[], level: number): number {
   return combos.length + 0.1 * lowSingles;
 }
 
-/** 手牌（含配牌）的拆法：每张配牌依次配到最能减少手数的点数上 */
+/** 手牌（含配牌）的拆法：一起分配两张配牌，能发现必须同时补两处的连牌。 */
 export function planHand(hand: readonly string[], level: number): Combo[] {
   const cnt = countNatural(hand, level);
-  let wilds = wildsOf(hand, level).length;
-  while (wilds-- > 0) {
-    let bestR = level;
-    cnt[level]++;
-    let bestCost = planCost(plan(cnt, level), level);
-    cnt[level]--;
-    for (let r = 2; r <= 14; r++) {
-      if (r === level) continue;
-      cnt[r]++;
-      const c = planCost(plan(cnt, level), level);
-      cnt[r]--;
-      if (c < bestCost - 1e-9) { bestCost = c; bestR = r; }
+  const wilds = wildsOf(hand, level).length;
+  if (wilds === 0) return copyPlan(cachedPlan(cnt, level));
+  const key = countKey(cnt, level, wilds);
+  const cached = handPlanCache.get(key);
+  if (cached) return copyPlan(cached);
+  // 同分时仍优先保留级牌；两张配牌不分先后，最多只需试 91 种。
+  const ranks = [level, ...ALL_RANKS.filter((r) => r <= 14 && r !== level)];
+  let best: Combo[] = [];
+  let bestCost = Infinity;
+  const assign = (left: number, start: number) => {
+    if (left === 0) {
+      const combos = cachedPlan(cnt, level);
+      const cost = planCost(combos, level);
+      if (cost < bestCost - 1e-9) { bestCost = cost; best = combos; }
+      return;
     }
-    cnt[bestR]++;
-  }
-  return plan(cnt, level);
+    for (let i = start; i < ranks.length; i++) {
+      cnt[ranks[i]]++;
+      assign(left - 1, i);
+      cnt[ranks[i]]--;
+    }
+  };
+  assign(wilds, 0);
+  return copyPlan(remember(handPlanCache, key, best));
 }
 
 /** 不算配牌时的手数（跟牌时比较各种出法用，便宜） */
@@ -171,7 +206,7 @@ export function naturalCost(hand: readonly string[], level: number): number {
 export function naturalShape(hand: readonly string[], level: number): { cost: number; bombs: number } {
   const cnt = countNatural(hand, level);
   if (cnt.every((x) => x === 0)) return { cost: 0, bombs: 0 };
-  const combos = plan(cnt, level);
+  const combos = cachedPlan(cnt, level);
   return { cost: planCost(combos, level), bombs: combos.filter(isBomb).length };
 }
 
@@ -244,19 +279,42 @@ export function beatsOf(hand: readonly string[], level: number, prev: Pattern): 
     case 'triple':
       for (let r = 2; r <= 14; r++) if (v(r) > prev.main) add([[r, 3]], { kind: 'triple', main: v(r), size: 3 });
       break;
-    case 'fullHouse':
+    case 'fullHouse': {
+      const cnt = countNatural(hand, level);
+      let beforeBombs: number | undefined;
       for (let t = 2; t <= 14; t++) {
         if (v(t) <= prev.main) continue;
         const opts = ALL_RANKS.filter((p) => p !== t)
-          .map((p) => takeCards(hand, level, [[t, 3], [p, 2]]))
-          .filter((x): x is string[] => x !== null)
-          .sort((a, b) => wildsOf(a, level).length - wildsOf(b, level).length);
-        for (const cards of opts) {
-          const m = moveOf(cards, level, { kind: 'fullHouse', main: v(t), size: 5 }, prev);
-          if (m) { out.push(m); break; }
+          .map((p) => ({ rank: p, cards: takeCards(hand, level, [[t, 3], [p, 2]]) }))
+          .filter((x): x is { rank: number; cards: string[] } => x.cards !== null)
+          // 带牌不拆炸弹；用配牌一样多时，先带低对，保留级牌和王对作控制。
+          .sort((a, b) => Number(cnt[a.rank] >= 4) - Number(cnt[b.rank] >= 4)
+            || wildsOf(a.cards, level).length - wildsOf(b.cards, level).length || v(a.rank) - v(b.rank));
+        if (opts.length === 0) continue;
+        // 两张配牌可声明成不同点数的带对，但实际是同一手牌，只评一次。
+        const seen = new Set<string>();
+        const moves = opts.filter(({ cards }) => {
+          const key = cards.join();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).map(({ cards }) => moveOf(cards, level, { kind: 'fullHouse', main: v(t), size: 5 }, prev))
+          .filter((m): m is Move => m !== null);
+        if (moves.length === 0) continue;
+        let best = moves[0];
+        if (moves.length > 1) {
+          beforeBombs ??= naturalShape(hand, level).bombs;
+          let bestCost = remainingCost(hand, level, best, beforeBombs);
+          for (let i = 1; i < moves.length; i++) {
+            const cost = remainingCost(hand, level, moves[i], beforeBombs);
+            if (cost < bestCost) { best = moves[i]; bestCost = cost; }
+          }
         }
+        // 不只看带对大小：带掉小对若会拆散连对/顺子，宁可带另一对。
+        out.push(best);
       }
       break;
+    }
     case 'straight':
       for (let s = 1; s <= 10; s++) if (s + 4 > prev.main) add(run(s, 5, 1), { kind: 'straight', main: s + 4, size: 5 });
       break;
@@ -320,6 +378,14 @@ export function bombsOf(hand: readonly string[], level: number, prev: Pattern | 
 function minus(hand: readonly string[], cards: readonly string[]): string[] {
   const s = new Set(cards);
   return hand.filter((c) => !s.has(c));
+}
+
+/** 跟出后的结构代价：带牌选择和跟牌决策共用同一标准。 */
+export function remainingCost(hand: readonly string[], level: number, move: Move, beforeBombs: number): number {
+  const after = naturalShape(minus(hand, move.cards), level);
+  // 跟普通牌时拆炸弹，比单纯多留一手牌更伤。
+  const broken = isBomb(move.p) ? 0 : Math.max(0, beforeBombs - after.bombs);
+  return after.cost + 0.8 * wildsOf(move.cards, level).length + BOMB_BREAK * broken;
 }
 
 function isControl(p: Pattern): boolean {
@@ -410,7 +476,7 @@ export function leadOrder(v: View): Move[] {
     if (isControl(c)) s += 30;
     if (isBomb(c)) s += 40;
     if (closing && !isBomb(c)) s += tops.includes(c) ? -200 : 0;
-    if (x.oppMin === 1 && c.kind === 'single') s += 50 - c.main;
+    if (x.oppMin === 1 && c.kind === 'single') return 50 - c.main;
     if (x.oppMin === 2 && c.kind === 'pair') s += 30;
     return s;
   };
@@ -441,6 +507,9 @@ function lead(v: View): Action {
     const strong = order.find((m) => isControl(m.p));
     if (strong) return act(strong);
   }
+  if (order.length >= 3 && x.partnerCount > 2 && v.counts.reduce((n, count) => n + count, 0) > 50) {
+    return act(chooseOpening(v, order, planHand));
+  }
   if (order.length) return act(order[0]);
   const low = x.hand.slice().sort((a, b) => valueOf(a, x.level) - valueOf(b, x.level))[0];
   return { type: 'play', cards: [low], as: { kind: 'single', main: valueOf(low, x.level) } };
@@ -459,15 +528,14 @@ function follow(v: View): Action {
 
   const shape = naturalShape(x.hand, x.level);
   const before = shape.cost;
-  const scored = cands.map((m) => {
-    const sh = naturalShape(minus(x.hand, m.cards), x.level);
-    // 为了跟一手普通牌拆掉炸弹：炸弹比一手牌值钱得多
-    const broken = isBomb(m.p) ? 0 : Math.max(0, shape.bombs - sh.bombs);
-    return { m, after: sh.cost + 0.8 * wildsOf(m.cards, x.level).length + BOMB_BREAK * broken };
-  });
+  const scored = cands.map((m) => ({ m, after: remainingCost(x.hand, x.level, m, shape.bombs) }));
   const normal = scored
     .filter((s) => !isBomb(s.m.p))
-    .sort((a, b) => a.after - b.after || strength(a.m.p) - strength(b.m.p));
+    .sort((a, b) => {
+      // 对手报单时先封住单张，不能为了保留一对大牌而放小单张让他跑。
+      if (prev.kind === 'single' && x.oppMin === 1) return b.m.p.main - a.m.p.main || a.after - b.after;
+      return a.after - b.after || strength(a.m.p) - strength(b.m.p);
+    });
 
   const prevSeatCount = v.counts[prev.seat];
   const danger = x.oppMin <= 4 || prevSeatCount <= 6;
@@ -492,19 +560,30 @@ function follow(v: View): Action {
 
 function tribute(v: View): Action {
   const target = tributeValue(v.hand, v.level);
-  const card = v.hand.find((c) => !isWild(c, v.level) && valueOf(c, v.level) === target)!;
-  return { type: 'tribute', card };
+  const options = v.hand.filter((c) => !isWild(c, v.level) && valueOf(c, v.level) === target);
+  return { type: 'tribute', card: chooseGift(v, options) };
 }
 
-function giveBack(v: View): Action {
-  const options = returnable(v.hand);
+/** 同点数也要看花色：送出其中一张可能刚好拆掉同花顺。进还贡每副只算一次。 */
+function chooseGift(v: View, options: string[]): string {
+  if (options.length === 1) return options[0];
+  const hasFlush = bombsOf(v.hand, v.level).some((m) => m.p.kind === 'straightFlush');
   let best = options[0];
   let bestCost = Infinity;
   for (const c of options) {
-    const cost = naturalCost(minus(v.hand, [c]), v.level) + valueOf(c, v.level) * 0.01;
+    const left = minus(v.hand, [c]);
+    const shape = naturalShape(left, v.level);
+    const losesFlush = hasFlush && !bombsOf(left, v.level).some((m) => m.p.kind === 'straightFlush');
+    const value = valueOf(c, v.level);
+    const cost = shape.cost - BOMB_BREAK * shape.bombs + Number(losesFlush) * BOMB_BREAK
+      + Number(isWild(c, v.level)) * 4 + Number(value >= 15) + value * 0.01;
     if (cost < bestCost) { bestCost = cost; best = c; }
   }
-  return { type: 'return', card: best };
+  return best;
+}
+
+function giveBack(v: View): Action {
+  return { type: 'return', card: chooseGift(v, returnable(v.hand)) };
 }
 
 export function decide(v: View): Action {

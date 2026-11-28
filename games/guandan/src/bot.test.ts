@@ -1,7 +1,7 @@
 import { SeededRng } from '@couju/sdk';
 import { describe, expect, it } from 'vitest';
-import { beatsOf, decide, hints, planHand } from './bot.ts';
-import { valueOf } from './cards.ts';
+import { beatsOf, decide, hints, plan, planHand } from './bot.ts';
+import { countNatural, valueOf } from './cards.ts';
 import { hand } from './testhand.ts';
 import { interpret, isBomb } from './patterns.ts';
 import { active, apply, setup, validate, view, type Action, type State, type View } from './rules.ts';
@@ -19,6 +19,28 @@ describe('拆牌', () => {
   it('炸弹整组留着', () => {
     const combos = planHand(hand('9 9 9 9 3 5'), 2);
     expect(combos.some((c) => c.kind === 'bomb' && c.size === 4)).toBe(true);
+  });
+  it('两张配牌一起补缺口，不贪心拆成两对一单', () => {
+    const combos = planHand(hand('h2 h2 3 4 7'), 2);
+    expect(combos).toMatchObject([{ kind: 'straight', main: 7, size: 5 }]);
+    expect(combos).toHaveLength(1);
+  });
+  it('缓存不受返回值被修改的影响，也不串级牌', () => {
+    const cards = hand('3 3 4 5 6 7');
+    const cnt = countNatural(cards, 2);
+    const expected = plan(cnt, 2);
+    const modified = plan(cnt, 2);
+    modified[0].ranks.length = 0;
+    modified[0].main = 99;
+    modified.length = 0;
+    expect(plan(cnt, 2)).toEqual(expected);
+    expect(plan(countNatural(hand('3 3'), 3), 3)[0].main).toBe(15);
+    expect(plan(countNatural(hand('3 3'), 2), 2)[0].main).toBe(3);
+
+    const wildHand = hand('h2 h2 3 4 7');
+    const expectedWild = planHand(wildHand, 2);
+    planHand(wildHand, 2)[0].ranks.length = 0;
+    expect(planHand(wildHand, 2)).toEqual(expectedWild);
   });
 });
 
@@ -54,6 +76,53 @@ describe('跟牌', () => {
       expect(interpret(m.cards, 2, prev, m.as)).not.toBeNull();
     }
   });
+  it('三带二优先带小对，保留级牌对子', () => {
+    const prev = prevBy(1, '5 5 5 3 3');
+    const moves = beatsOf(hand('2 2 4 4 6 6 6 9'), 2, prev);
+    const sixes = moves.find((m) => m.p.kind === 'fullHouse' && m.p.main === 6)!;
+    expect(sixes.cards.slice().sort()).toEqual(hand('6 6 6 4 4').slice().sort());
+  });
+  it('三带二的带牌不拆炸弹', () => {
+    const prev = prevBy(1, '5 5 5 3 3');
+    const moves = beatsOf(hand('3 3 3 3 6 6 6 9 9'), 2, prev);
+    const sixes = moves.find((m) => m.p.kind === 'fullHouse' && m.p.main === 6)!;
+    expect(sixes.cards.slice().sort()).toEqual(hand('6 6 6 9 9').slice().sort());
+  });
+  it('三带二带另一对，保留完整连对作为最后一手', () => {
+    const v = viewOf(['3 3 4 4 5 5 6 6 6 K K', '7 7 8 8 9 9 10 10', '8 8 9 9 10 10 J J', '9 9 10 10 J J Q Q'], {
+      lastPlay: prevBy(1, '5 5 5 9 9'),
+    });
+    const a = decide(v);
+    expect(a).toMatchObject({ type: 'play', as: { kind: 'fullHouse', main: 6 } });
+    if (a.type === 'play') {
+      expect(a.cards.slice().sort()).toEqual(hand('6 6 6 K K').slice().sort());
+      const rest = v.hand.filter((c) => !a.cards.includes(c));
+      expect(interpret(rest, 2, null)).toMatchObject({ kind: 'tube', size: 6 });
+    }
+  });
+  it('三带二选带对时把配牌的消耗一起计分', () => {
+    const prev = prevBy(1, '5 5 5 3 3');
+    const moves = beatsOf(hand('h2 4 6 6 6 9 9'), 2, prev);
+    const sixes = moves.find((m) => m.p.kind === 'fullHouse' && m.p.main === 6)!;
+    expect(sixes.cards.slice().sort()).toEqual(hand('6 6 6 9 9').slice().sort());
+    expect(interpret(sixes.cards, 2, prev, sixes.as)).not.toBeNull();
+  });
+  it('对手报单时拆大对封口，不出小单张让下家走', () => {
+    const v = viewOf(['4 K K', 'Q', '3 3 6 6', '8 8'], { lastPlay: prevBy(3, '3') });
+    expect(decide(v)).toMatchObject({ type: 'play', as: { kind: 'single', main: 13 } });
+  });
+});
+
+it('对手报单而自己全是单张时，先出最大单张封口', () => {
+  const v = viewOf(['4 7 2', 'Q', '3 3 6 6', '8 8']);
+  expect(decide(v)).toMatchObject({ type: 'play', as: { kind: 'single', main: 15 } });
+});
+
+it('开局能用 QQ、KK、AA 出最大木板时，留下配牌和五张 7 的炸弹', () => {
+  const s = setup({ rng: SeededRng.fromSeed(550001) });
+  const a = decide(view(s, s.turn));
+  expect(a).toMatchObject({ type: 'play', as: { kind: 'tube', main: 14 } });
+  expect(validate(s, s.turn, a)).toBeNull();
 });
 
 describe('进贡', () => {

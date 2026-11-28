@@ -1,0 +1,555 @@
+{
+  "me": 2,
+  "opts": {
+    "length": "one",
+    "aLimit": 3
+  },
+  "phase": "playing",
+  "hand": [
+    "S14a",
+    "S14b",
+    "H12a"
+  ],
+  "counts": [
+    0,
+    13,
+    3,
+    0
+  ],
+  "handNo": 1,
+  "level": 10,
+  "levelTeam": null,
+  "teamLevels": [
+    10,
+    10
+  ],
+  "aFails": [
+    0,
+    0
+  ],
+  "turn": 2,
+  "lastPlay": null,
+  "recent": [
+    [
+      "S04a",
+      "S04b",
+      "C04a"
+    ],
+    "pass",
+    "pass",
+    null
+  ],
+  "history": [
+    {
+      "seat": 0,
+      "cards": [
+        "C06b",
+        "D06a",
+        "D06b",
+        "S03a",
+        "S03b"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 3,
+      "cards": [
+        "C14a",
+        "C14b",
+        "D14a",
+        "S07a",
+        "C07b"
+      ]
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "H10b",
+        "S02a",
+        "C02a",
+        "D02b"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "H04b"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": [
+        "D05b"
+      ]
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "C11a"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "S10b"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "H07a",
+        "S07b",
+        "C07a",
+        "H05a",
+        "S05b"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "C09b"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "S10a"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "J16b"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "C11b",
+        "D11a"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "H08a",
+        "C08a"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": [
+        "D10a",
+        "D10b"
+      ]
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": [
+        "H14a",
+        "D14b",
+        "H03a",
+        "C03a",
+        "H02b",
+        "C02b"
+      ]
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "H06a",
+        "H06b",
+        "S06b",
+        "C06a"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": [
+        "H12b",
+        "S12b",
+        "C12a",
+        "C12b"
+      ]
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 3,
+      "cards": [
+        "H03b",
+        "D03a",
+        "D03b",
+        "H02a",
+        "S02b",
+        "D02a"
+      ]
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "H10a",
+        "H09a",
+        "S09a",
+        "C09a",
+        "S08a",
+        "D08b"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "S11a"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "J17a"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": [
+        "H08b",
+        "S08b",
+        "C08b",
+        "D08a"
+      ]
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 3,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": [
+        "S09b",
+        "D09b"
+      ]
+    },
+    {
+      "seat": 2,
+      "cards": [
+        "S12a",
+        "D12b"
+      ]
+    },
+    {
+      "seat": 3,
+      "cards": [
+        "S13b",
+        "D13b"
+      ]
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 3,
+      "cards": [
+        "C04b",
+        "D04a",
+        "D04b"
+      ]
+    },
+    {
+      "seat": 0,
+      "cards": null
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 3,
+      "cards": [
+        "C10a",
+        "C10b",
+        "H11a",
+        "S11b",
+        "H09b",
+        "D09a"
+      ]
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "H05b",
+        "S05a",
+        "C05a",
+        "C05b"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "C13a",
+        "C13b"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "H14b"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "D12a"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "J17b"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "J16a"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    },
+    {
+      "seat": 0,
+      "cards": [
+        "S04a",
+        "S04b",
+        "C04a"
+      ]
+    },
+    {
+      "seat": 1,
+      "cards": null
+    },
+    {
+      "seat": 2,
+      "cards": null
+    }
+  ],
+  "finished": [
+    3,
+    0
+  ],
+  "tribute": null,
+  "lastHand": null,
+  "ready": [
+    false,
+    false,
+    false,
+    false
+  ],
+  "winnerTeam": null
+}

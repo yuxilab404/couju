@@ -72,7 +72,8 @@ function runNeed(c: readonly number[], total: number, start: number, len: number
 /** 列出这组牌所有合法的牌型解释（同牌型同主值去重） */
 export function parse(cards: readonly string[], level: number): Pattern[] {
   const n = cards.length;
-  if (n === 0) return [];
+  if (n === 0 || n > 10) return [];
+  if (n === 1) return [{ kind: 'single', main: valueOfRank(rankOf(cards[0]), level), size: 1 }];
   const naturals = cards.filter((id) => !isWild(id, level));
   const w = n - naturals.length;
   const c = new Array<number>(18).fill(0);
@@ -107,16 +108,13 @@ export function parse(cards: readonly string[], level: number): Pattern[] {
   }
   if (n === 4 && c[16] === 2 && c[17] === 2) push('jokerBomb', 17);
 
-  // 三带二：三张 t + 一对 p（p 可以是一对王，但配牌不能当王）
-  if (n === 5) {
-    for (let t = 2; t <= 14; t++) {
-      for (const p of [2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 16, 17]) {
-        if (p === t || c[t] > 3 || c[p] > 2) continue;
-        if (distinct.some((r) => r !== t && r !== p)) continue;
-        if (p >= 16 && c[p] !== 2) continue;
-        if (3 - c[t] + (2 - c[p]) !== w) continue;
-        push('fullHouse', v(t));
-      }
+  // 最多两张配牌，三张的点数一定在真牌里。只有一种真牌时，余下两张配牌可作对子。
+  if (n === 5 && distinct.length <= 2) {
+    for (const t of distinct) {
+      if (t >= 16 || c[t] > 3) continue;
+      const p = distinct.find((r) => r !== t);
+      if (p !== undefined && (c[p] > 2 || (p >= 16 && c[p] !== 2))) continue;
+      push('fullHouse', v(t));
     }
   }
 
