@@ -22,6 +22,14 @@ test('掼蛋：一个人 + 三个机器人打完一副', async ({ page }) => {
   await expect(page.getByLabel('人数')).toHaveCount(0);
   await expect(page.locator('.seat-no').nth(2)).toContainText('队伍 1');
   await expect(page.locator('.seat-no').nth(3)).toContainText('队伍 2');
+  // 在外面自己选队友：房主从 1 号位换到 2 号位（队伍 2），开局不随机打乱
+  await expect(page.getByText('按座位分队')).toBeVisible();
+  const seat = (i: number) => page.locator('.seats > *').nth(i);
+  await expect(seat(0)).toContainText('admin4');
+  await seat(0).getByRole('button', { name: '换座' }).click();
+  await seat(1).getByRole('button', { name: '换到这' }).click();
+  await expect(seat(1)).toContainText('admin4');
+  await expect(seat(0)).not.toContainText('admin4');
   await page.getByRole('button', { name: '开始' }).click();
 
   await expect(page.locator('[data-card][aria-pressed]')).toHaveCount(27);
