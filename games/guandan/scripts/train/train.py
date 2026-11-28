@@ -30,6 +30,13 @@ rng = np.random.default_rng(0)
 sizes = [F] + hidden + [1]
 W = [rng.standard_normal((sizes[i], sizes[i + 1])).astype(np.float32) * np.sqrt(2 / sizes[i]) for i in range(len(sizes) - 1)]
 B = [np.zeros(sizes[i + 1], dtype=np.float32) for i in range(len(sizes) - 1)]
+# INIT=<value-weights.ts>：从已有权重接着练（先用规则 bot 的大量数据预训练，再用搜索 bot 的数据微调）
+if os.environ.get('INIT'):
+    txt = open(os.environ['INIT']).read()
+    init = json.loads(txt[txt.index('=') + 1:].strip().rstrip(';'))
+    for i, L in enumerate(init):
+        W[i] = np.frombuffer(base64.b64decode(L['w']), dtype='<f4').reshape(L['out'], L['inp']).T.copy()
+        B[i] = np.frombuffer(base64.b64decode(L['b']), dtype='<f4').copy()
 mW = [np.zeros_like(w) for w in W]; vW = [np.zeros_like(w) for w in W]
 mB = [np.zeros_like(b) for b in B]; vB = [np.zeros_like(b) for b in B]
 
@@ -52,7 +59,8 @@ def report(tag):
     print(f'{tag} 验证 MSE {mse:.4f}（只猜平均值 {base:.4f}，解释了 {100 * (1 - mse / base):.1f}%）', flush=True)
     return mse
 
-lr, bs, t = 1e-3, 512, 0
+lr, bs, t = float(os.environ.get('LR', 1e-3)), 512, 0
+report('开始')
 for ep in range(epochs):
     t0 = time.time()
     perm = rng.permutation(len(ytr))
