@@ -1,11 +1,13 @@
 /**
  * 掼蛋规则 bot：把手牌拆成尽量少的手数（炸弹整组留着），配牌按最能减少手数的方式去配；
- * 领出先走小牌、大牌型；跟牌优先不拆牌，对家的牌不压，对手快走完时舍得用炸弹。
- * 只看 view。
+ * 领出先走小牌、大牌型，记牌算出别人压不过的牌留着收尾；跟牌优先不拆牌、不为普通牌拆炸弹，
+ * 对家的牌不压，下家出的牌（对家已经不要）更舍得接，对手快走完时舍得用炸弹。
+ * 只看 view。牌桌上坐的是 searchbot.ts：残局在它上面再做一层搜索，规则 bot 给搜索当推演策略和"提示"按钮用。
  */
-import type { Bot, Seat } from '@couju/sdk';
+import type { Seat } from '@couju/sdk';
 import { countNatural, isWild, rankOf, suitOf, SUITS, valueOf, valueOfRank, wildsOf } from './cards.ts';
 import { beats, interpret, isBomb, parse, rankAt, strength, type Kind, type Pattern } from './patterns.ts';
+import { outstanding } from './counter.ts';
 import { partnerOf, returnable, tributeValue, type Action, type View } from './rules.ts';
 
 /** 拆牌里的一手：ranks 是每张牌的自然点数（A = 14），用到配牌时也写它当的点数 */
@@ -21,6 +23,7 @@ export interface Move {
 }
 
 const NODE_LIMIT = 1500;
+const BOMB_BREAK = 2;
 
 function rep(r: number, k: number): number[] {
   return new Array<number>(k).fill(r);
@@ -161,9 +164,15 @@ export function planHand(hand: readonly string[], level: number): Combo[] {
 
 /** 不算配牌时的手数（跟牌时比较各种出法用，便宜） */
 export function naturalCost(hand: readonly string[], level: number): number {
+  return naturalShape(hand, level).cost;
+}
+
+/** 不算配牌时的手数和其中炸弹的个数 */
+export function naturalShape(hand: readonly string[], level: number): { cost: number; bombs: number } {
   const cnt = countNatural(hand, level);
-  if (cnt.every((x) => x === 0)) return 0;
-  return planCost(plan(cnt, level), level);
+  if (cnt.every((x) => x === 0)) return { cost: 0, bombs: 0 };
+  const combos = plan(cnt, level);
+  return { cost: planCost(combos, level), bombs: combos.filter(isBomb).length };
 }
 
 // ---------- 把点数换成具体的牌 ----------
@@ -288,7 +297,12 @@ export function bombsOf(hand: readonly string[], level: number, prev: Pattern | 
     if (smallest && smallest < cnt[r] + w) out.push(bomb(cnt[r] + w)!);
   }
   for (const suit of SUITS) {
+    const has = new Array<boolean>(15).fill(false);
+    for (const id of hand) if (suitOf(id) === suit && !isWild(id, level)) has[rankOf(id)] = true;
     for (let s = 1; s <= 10; s++) {
+      let missing = 0;
+      for (let q = s; q < s + 5; q++) if (!has[rankAt(q)]) missing++;
+      if (missing > w) continue;
       const reqs = Array.from({ length: 5 }, (_, i) => [rankAt(s + i), 1] as [number, number]);
       const m = moveOf(takeCards(hand, level, reqs, suit), level, { kind: 'straightFlush', main: s + 4, size: 5 }, prev);
       if (m) out.push(m);
@@ -310,6 +324,57 @@ function minus(hand: readonly string[], cards: readonly string[]): string[] {
 
 function isControl(p: Pattern): boolean {
   return isBomb(p) || ((p.kind === 'single' || p.kind === 'pair') && p.main >= 15);
+}
+
+/** 记牌：别人手里还剩的牌（按自然点数，下标 2..17，配牌单独数） */
+interface Unseen {
+  nat: number[];
+  wilds: number;
+}
+
+function unseenOf(v: View): Unseen {
+  const out = outstanding(v);
+  const wildId = (id: string) => isWild(id, v.level);
+  let seenWilds = v.hand.filter(wildId).length;
+  for (const h of v.history) seenWilds += (h.cards ?? []).filter(wildId).length;
+  const wilds = 2 - seenWilds;
+  out[v.level] -= wilds;
+  return { nat: out, wilds };
+}
+
+/**
+ * 按记牌，别人还能不能用同牌型的普通牌压过 c（炸弹不算）。
+ * 把别人的牌当成一手看，偏保守：说"压不过"时是真的压不过。
+ */
+function isTop(c: Pattern, u: Unseen, level: number): boolean {
+  if (isBomb(c)) return true;
+  const v = (r: number) => valueOfRank(r, level);
+  const group = (r: number, k: number) => (r >= 16 ? u.nat[r] >= k : u.nat[r] + u.wilds >= k && (u.nat[r] > 0 || r === level));
+  const run = (s: number, len: number, w: number) => {
+    let need = 0;
+    for (let q = s; q < s + len; q++) need += Math.max(0, w - u.nat[rankAt(q)]);
+    return need <= u.wilds;
+  };
+  switch (c.kind) {
+    case 'single':
+      return !ALL_RANKS.some((r) => v(r) > c.main && u.nat[r] + (r === level ? u.wilds : 0) > 0);
+    case 'pair':
+      return !ALL_RANKS.some((r) => v(r) > c.main && group(r, 2));
+    case 'triple':
+    case 'fullHouse':
+      return !ALL_RANKS.some((r) => r <= 14 && v(r) > c.main && group(r, 3));
+    case 'straight':
+      for (let s = c.main - 3; s <= 10; s++) if (run(s, 5, 1)) return false;
+      return true;
+    case 'tube':
+      for (let s = c.main - 1; s <= 12; s++) if (run(s, 3, 2)) return false;
+      return true;
+    case 'plate':
+      for (let s = c.main; s <= 13; s++) if (run(s, 2, 3)) return false;
+      return true;
+    default:
+      return false;
+  }
 }
 
 interface Ctx {
@@ -335,11 +400,16 @@ function ctxOf(v: View): Ctx {
 /** 领出时的候选顺序（最想先出的在前） */
 export function leadOrder(v: View): Move[] {
   const x = ctxOf(v);
+  const u = unseenOf(v);
   const combos = planHand(x.hand, x.level);
+  const tops = combos.filter((c) => isTop(c, u, x.level));
+  // 除了一手，其余都是别人压不过的：先走压不过的，最后一手留到收回牌权后再出
+  const closing = combos.length >= 2 && combos.length - tops.length <= 1 && tops.some((c) => !isBomb(c));
   const score = (c: Combo) => {
     let s = c.main - 0.8 * c.size;
     if (isControl(c)) s += 30;
     if (isBomb(c)) s += 40;
+    if (closing && !isBomb(c)) s += tops.includes(c) ? -200 : 0;
     if (x.oppMin === 1 && c.kind === 'single') s += 50 - c.main;
     if (x.oppMin === 2 && c.kind === 'pair') s += 30;
     return s;
@@ -385,20 +455,30 @@ function follow(v: View): Action {
   if (cands.length === 0) return { type: 'pass' };
   // 对家的牌不压
   if (prev.seat === x.partner) return { type: 'pass' };
+  const nextOpp = (x.me + 1) % 4;
 
-  const before = naturalCost(x.hand, x.level);
-  const scored = cands.map((m) => ({
-    m,
-    after: naturalCost(minus(x.hand, m.cards), x.level) + 0.8 * wildsOf(m.cards, x.level).length,
-  }));
+  const shape = naturalShape(x.hand, x.level);
+  const before = shape.cost;
+  const scored = cands.map((m) => {
+    const sh = naturalShape(minus(x.hand, m.cards), x.level);
+    // 为了跟一手普通牌拆掉炸弹：炸弹比一手牌值钱得多
+    const broken = isBomb(m.p) ? 0 : Math.max(0, shape.bombs - sh.bombs);
+    return { m, after: sh.cost + 0.8 * wildsOf(m.cards, x.level).length + BOMB_BREAK * broken };
+  });
+  const normal = scored
+    .filter((s) => !isBomb(s.m.p))
+    .sort((a, b) => a.after - b.after || strength(a.m.p) - strength(b.m.p));
+
   const prevSeatCount = v.counts[prev.seat];
   const danger = x.oppMin <= 4 || prevSeatCount <= 6;
+  // 上家出的牌对家还能接；下家出的牌，对家已经不要了，我不管就回到他手里
+  const lastLine = prev.seat === nextOpp || x.partnerCount === 0;
 
-  const normal = scored.filter((s) => !isBomb(s.m.p)).sort((a, b) => a.after - b.after || strength(a.m.p) - strength(b.m.p));
   const bombs = scored.filter((s) => isBomb(s.m.p)).sort((a, b) => strength(a.m.p) - strength(b.m.p));
   const best = normal[0];
   if (best) {
-    const breaks = best.after - (before - 1);
+    // 我是最后一道关：不减少手数也接
+    const breaks = best.after - (before - 1) - (lastLine ? 0.5 : 0);
     const wasteful = isControl(best.m.p) && prev.main < 11 && x.hand.length > 10 && !danger;
     const ok = danger || breaks <= 0.5 || (breaks <= 1.5 && x.hand.length <= 12);
     if (ok && !wasteful) return act(best.m);
@@ -459,9 +539,5 @@ export function hints(v: View): Move[] {
   }
   return list;
 }
-
-export const bot: Bot<View, Action> = {
-  decide: (v) => decide(v),
-};
 
 export { parse };

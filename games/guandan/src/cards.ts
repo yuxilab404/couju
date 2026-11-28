@@ -18,7 +18,8 @@ export const RANK_LABEL: Record<number, string> = {
 };
 
 export function rankOf(id: string): number {
-  return Number(id.slice(1, 3));
+  // 等于 Number(id.slice(1, 3))；bot 搜索时一步要调几十万次，按字符算快得多
+  return (id.charCodeAt(1) - 48) * 10 + id.charCodeAt(2) - 48;
 }
 export function suitOf(id: string): SuitCode {
   return id[0] as SuitCode;
