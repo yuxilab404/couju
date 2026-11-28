@@ -51,7 +51,8 @@ beforeEach(() => vi.useFakeTimers());
 afterEach(() => vi.useRealTimers());
 
 const tick = (ms = 0) => vi.advanceTimersByTimeAsync(ms);
-const opts = { botDelayMs: [50, 50] as [number, number], random: () => 0.3 };
+// 按固定座位断言谁接手、谁被托管，所以关掉开局随机排座
+const opts = { botDelayMs: [50, 50] as [number, number], random: () => 0.3, shuffleSeats: false };
 
 describe('房间 + 交接', () => {
   it('三人建房开局，房主掉线 15 秒后第二个人接手，局面延续', async () => {

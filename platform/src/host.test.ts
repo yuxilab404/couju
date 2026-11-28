@@ -43,7 +43,7 @@ beforeEach(() => {
 afterEach(() => vi.useRealTimers());
 
 function engine(members = [member(1), member(2)], cp: Checkpoint | null = null) {
-  return new HostEngine([toy], io, members, cp, { botDelayMs: [100, 100], hostedAfterMs: 30_000, random: () => 0.5, freeze: true });
+  return new HostEngine([toy], io, members, cp, { botDelayMs: [100, 100], hostedAfterMs: 30_000, random: () => 0.5, freeze: true, shuffleSeats: false });
 }
 
 describe('HostEngine', () => {
@@ -158,7 +158,7 @@ describe('HostEngine', () => {
   it('游戏声明的停顿：bot 停完才出手，倒计时顺延', async () => {
     // 真人出过手、轮到 1 号座位时停 3 秒（像唬牌翻完牌）
     const paused = { ...toy, turn: { ...toy.turn, pause: (s: { n: number; turn: number }) => (s.n > 0 && s.turn === 1 ? 3000 : 0) } };
-    const h = new HostEngine([paused], io, [member(1)], null, { botDelayMs: [100, 100], random: () => 0.5, freeze: true });
+    const h = new HostEngine([paused], io, [member(1)], null, { botDelayMs: [100, 100], random: () => 0.5, freeze: true, shuffleSeats: false });
     h.setSeatCount(2);
     h.start();
     await flush();
@@ -212,20 +212,67 @@ describe('HostEngine', () => {
     expect(io.notices.join()).toContain('版本');
   });
 
-  it('等人阶段：换座、请人下座、离开的人让出座位', async () => {
+  it('等人阶段：放 bot、请人下座、离开的人让出座位', async () => {
     const h = engine([member(1), member(2), member(3)]);
     h.setSeatCount(3);
     await flush();
     h.onRelay(3, { k: 'sit', seat: 2 });
     await flush();
     expect(io.lastSync(3)!.room.seats[2]).toEqual({ kind: 'human', userId: 3 });
-    h.swapSeats(0, 2);
     h.setSlot(1, { kind: 'bot' });
     await flush();
-    expect(io.lastSync(1)!.room.seats).toEqual([{ kind: 'human', userId: 3 }, { kind: 'bot' }, { kind: 'human', userId: 1 }]);
+    expect(io.lastSync(1)!.room.seats).toEqual([{ kind: 'human', userId: 1 }, { kind: 'bot' }, { kind: 'human', userId: 3 }]);
+    h.setSlot(2, { kind: 'empty' });
+    await flush();
+    expect(io.lastSync(1)!.room.seats[2]).toEqual({ kind: 'empty' });
+    h.onRelay(3, { k: 'sit', seat: 2 });
     h.membersChanged([member(1), member(2)]);
     await flush();
-    expect(io.lastSync(1)!.room.seats[0]).toEqual({ kind: 'empty' });
+    expect(io.lastSync(1)!.room.seats[2]).toEqual({ kind: 'empty' });
+  });
+});
+
+describe('HostEngine 开局随机排座', () => {
+  /** 用一串固定的随机数代替 Math.random，循环取 */
+  const seq = (xs: number[]) => {
+    let i = 0;
+    return () => xs[i++ % xs.length];
+  };
+
+  it('开局和再来一局都重新随机排座，人和 bot 都跟着动；等人时的座位不算数', async () => {
+    const h = new HostEngine([toy], io, [member(1), member(2)], null, {
+      botDelayMs: [100, 100], freeze: true, random: seq([0.99, 0.0, 0.0, 0.5, 0.7, 0.1]),
+    });
+    h.setSeatCount(4);
+    await flush();
+    expect(io.lastSync(1)!.room.seats).toEqual([{ kind: 'human', userId: 1 }, { kind: 'human', userId: 2 }, { kind: 'empty' }, { kind: 'empty' }]);
+    h.start();
+    await flush();
+    const seats = () => io.lastSync(1)!.room.seats;
+    const first = seats();
+    // 同样两个真人、两个 bot，只是换了位置
+    expect(first.filter((s) => s.kind === 'bot')).toHaveLength(2);
+    expect(first.filter((s) => s.kind === 'human').map((s) => (s as { userId: number }).userId).sort()).toEqual([1, 2]);
+    expect(first).not.toEqual([{ kind: 'human', userId: 1 }, { kind: 'human', userId: 2 }, { kind: 'bot' }, { kind: 'bot' }]);
+    // 每人拿到的视图跟着新座位走
+    const seatOf = (id: number) => first.findIndex((s) => s.kind === 'human' && s.userId === id);
+    expect(io.lastSync(1)!.game!.seat).toBe(seatOf(1));
+    expect(io.lastSync(2)!.game!.seat).toBe(seatOf(2));
+    // 开局时记下的座位归属（结算、积分用）也是新座位
+    expect(JSON.parse(io.checkpoint).game.seatKeys[seatOf(2)]).toBe('u2');
+  });
+
+  it('多次开局座位分布不总一样', async () => {
+    const h = new HostEngine([toy], io, [member(1), member(2), member(3)], null, { botDelayMs: [100, 100], freeze: true });
+    h.setSeatCount(3);
+    const seen = new Set<string>();
+    for (let i = 0; i < 20; i++) {
+      h.backToRoom();
+      h.start();
+      await flush();
+      seen.add(JSON.stringify(io.lastSync(1)!.room.seats));
+    }
+    expect(seen.size).toBeGreaterThan(1);
   });
 });
 
