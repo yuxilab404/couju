@@ -28,7 +28,9 @@ async function playUntilEnd(page: Page, maxSteps = 400) {
       const hint = page.getByRole('button', { name: '提示' });
       if (await hint.isEnabled()) {
         await hint.click();
-        await play.click();
+        // bot 会"不要"时第一下提示只是建议不要，不选牌
+        if (await play.isEnabled()) await play.click();
+        else await page.getByRole('button', { name: '不要' }).click();
       } else {
         // 先选一张牌再点"不要"：选着的牌要落回去
         await page.locator('[data-card][aria-pressed]').first().click({ position: { x: 6, y: 20 } });

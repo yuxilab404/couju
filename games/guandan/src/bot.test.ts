@@ -46,7 +46,7 @@ describe('跟牌', () => {
     const a = decide(v);
     expect(a).toMatchObject({ type: 'play', as: { kind: 'bomb', main: 9 } });
     if (a.type === 'play') expect(a.cards).toHaveLength(6);
-    expect(hints(v)).not.toHaveLength(0);
+    expect(hints(v).moves).not.toHaveLength(0);
   });
   it('列出的出法都压得过', () => {
     const prev = prevBy(1, '3 4 5 6 7');
@@ -77,9 +77,39 @@ describe('进贡', () => {
 it('提示：第一条就是 bot 自己会出的', () => {
   const v = viewOf(['3 3 4 4 5 5 9 K', '7', '8', '9']);
   const h = hints(v);
-  expect(h.length).toBeGreaterThan(0);
+  expect(h.pass).toBe(false);
+  expect(h.moves.length).toBeGreaterThan(0);
   const a = decide(v) as Extract<Action, { type: 'play' }>;
-  expect(h[0].cards.slice().sort()).toEqual(a.cards.slice().sort());
+  expect(h.moves[0].cards.slice().sort()).toEqual(a.cards.slice().sort());
+});
+
+describe('提示的顺序', () => {
+  const prevBy = (seat: number, spec: string, level = 2) => {
+    const cards = hand(spec);
+    return { ...interpret(cards, level, null)!, seat, cards };
+  };
+  it('对家的牌：先建议不出，不会一上来就提示炸对家', () => {
+    const v = viewOf(['A A A A K K K K Q Q J 10 5 5 3', '7 7', '8 8', '9 9'], { lastPlay: prevBy(2, '2') });
+    const h = hints(v);
+    expect(h).toMatchObject({ pass: true, fromPartner: true });
+    expect(h.moves.every((m) => isBomb(m.p))).toBe(true);
+  });
+  it('跟单张：拆对子的在前，拆炸弹的在后，炸弹最后', () => {
+    const many = '3 4 5 6 7 8 9 10 J Q';
+    const v = viewOf(['A A A A K K K K Q Q J J 10 10 5 5 3', many, many, many], { lastPlay: prevBy(1, '8') });
+    const h = hints(v);
+    expect(h.pass).toBe(true); // 对手牌还多，不值得拆
+    expect(h.moves.map((m) => (isBomb(m.p) ? 'bomb' : String(m.p.main)))).toEqual(['10', '11', '12', '13', '14', 'bomb', 'bomb']);
+  });
+  it('跟对子：自然对子在前，用配牌凑的、拆炸弹的在后', () => {
+    const v = viewOf(['h2 8 7 7 9 9 10 10 10 10 Q Q', '7 7', '8 8', '9 9'], { lastPlay: prevBy(1, '3 3') });
+    const moves = hints(v).moves.filter((m) => !isBomb(m.p));
+    const wildAt = moves.findIndex((m) => m.cards.some((c) => c.startsWith('H02')));
+    const tenAt = moves.findIndex((m) => m.p.main === 10);
+    expect(moves[0].p.main).toBe(7);
+    expect(wildAt).toBeGreaterThan(moves.findIndex((m) => m.p.main === 12));
+    expect(tenAt).toBe(moves.length - 1);
+  });
 });
 
 /** 只会出最小单张、能管就管的对手 */

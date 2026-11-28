@@ -48,8 +48,11 @@ test('掼蛋：一个人 + 三个机器人打完一副', async ({ page }) => {
       const hint = page.getByRole('button', { name: '提示' });
       if (await hint.isEnabled()) {
         await hint.click();
-        await play.click();
-        played++;
+        // bot 会"不出"时第一下提示只是建议不出，不选牌
+        if (await play.isEnabled()) {
+          await play.click();
+          played++;
+        } else await page.getByRole('button', { name: '不出' }).click();
       } else await page.getByRole('button', { name: '不出' }).click();
     }
     await page.waitForTimeout(250);

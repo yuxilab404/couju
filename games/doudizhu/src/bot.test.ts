@@ -63,10 +63,34 @@ describe('bot', () => {
       let s = setup({ rng });
       for (let i = 0; i < 200 && s.phase !== 'ended'; i++) {
         const v = view(s, s.turn);
-        for (const h of hints(v)) expect(validate(s, s.turn, { type: 'play', cards: h })).toBeNull();
+        for (const h of hints(v).moves) expect(validate(s, s.turn, { type: 'play', cards: h })).toBeNull();
         s = apply(s, s.turn, decide(v), { rng });
       }
     }
+  });
+  it('提示：队友的牌先建议不要，炸弹排在最后', () => {
+    let s = base({
+      landlord: 0, turn: 1,
+      hands: [['S03', 'S04', 'S05', 'H09', 'D10'], ['S13', 'S08', 'S07', 'H07', 'C04'], ['J17', 'S14', 'S06', 'H06', 'C06', 'D06', 'H03']],
+    });
+    s = apply(s, 1, { type: 'play', cards: ['S13'] }, r1());
+    const h = hints(view(s, 2));
+    expect(h).toMatchObject({ pass: true, fromTeammate: true });
+    expect(h.moves.map((m) => m.length)).toEqual([1, 1, 4]); // A、大王，最后才是炸弹
+    expect(h.moves[0]).toEqual(['S14']);
+  });
+  it('提示：跟小单牌先给不拆牌的小牌，2 和王往后放', () => {
+    let s = base({
+      landlord: 0, turn: 1,
+      hands: [['S03', 'S04', 'S05', 'H09', 'D10'], ['S04', 'S08', 'S07', 'H07', 'C04'], ['J16', 'S15', 'S09', 'S12', 'H11', 'C11', 'H03']],
+    });
+    s = apply(s, 1, { type: 'play', cards: ['S04'] }, r1());
+    const ranks = hints(view(s, 2)).moves.map((m) => m.map((c) => Number(c.slice(1))));
+    expect(ranks.slice(0, 2)).toEqual([[9], [12]]);
+    const idx = (r: number) => ranks.findIndex((m) => m.length === 1 && m[0] === r);
+    expect(idx(15)).toBeGreaterThan(idx(12));
+    expect(idx(16)).toBeGreaterThan(idx(12));
+    expect(idx(11)).toBeGreaterThan(idx(12)); // 拆对子的排在不拆的后面
   });
   it('对打几百局：全部合法结束，打印地主胜率', () => {
     let lord = 0, spring = 0;

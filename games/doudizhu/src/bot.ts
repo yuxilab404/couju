@@ -365,21 +365,50 @@ export function decide(v: View): Action {
   return v.lastPlay ? follow(v) : lead(v);
 }
 
-/** 给"提示"按钮用：能出的组合，最推荐的在前 */
-export function hints(v: View): string[][] {
-  if (v.me === null || v.phase !== 'playing' || v.turn !== v.me) return [];
+/** "提示"按钮的内容：bot 建不建议不要，以及能出的牌（最推荐的在前） */
+export interface Hint {
+  /** bot 自己会选"不要"（比如牌是队友出的，或者压了要拆好牌） */
+  pass: boolean;
+  /** 队友出的牌 */
+  fromTeammate: boolean;
+  moves: string[][];
+}
+
+function bombCount(cnt: readonly number[]): number {
+  return plan(cnt).filter(isBomb).length;
+}
+
+/**
+ * 给"提示"按钮用。第一条是 bot 自己会出的；其余按人的习惯排：
+ * 不拆牌的在前、拆牌的在后，拆炸弹的再往后，同一档里从小到大；2 和王算控制牌往后放；炸弹、王炸最后。
+ */
+export function hints(v: View): Hint {
+  const none: Hint = { pass: false, fromTeammate: false, moves: [] };
+  if (v.me === null || v.phase !== 'playing' || v.turn !== v.me) return none;
   const x = ctxOf(v);
-  const combos = v.lastPlay ? beatsOf(x.cnt, v.lastPlay) : leadOrder(v);
-  const scored = combos.map((c) => ({ c, after: handCost(minus(x.cnt, c.ranks)) }));
-  if (v.lastPlay) scored.sort((a, b) => Number(isBomb(a.c)) - Number(isBomb(b.c)) || a.after - b.after || a.c.main - b.c.main);
   const first = decide(v);
-  const list = scored.map((s) => pickCards(x.hand, s.c.ranks)!);
-  if (first.type === 'play') {
-    const key = first.cards.slice().sort().join();
-    const rest = list.filter((l) => l.slice().sort().join() !== key);
-    return [first.cards, ...rest];
-  }
-  return list;
+  const fromTeammate = !!v.lastPlay && v.lastPlay.seat === x.teammate;
+  let combos: Combo[];
+  if (v.lastPlay) {
+    const before = handCost(x.cnt);
+    const bombs = bombCount(x.cnt);
+    const rank = (c: Combo) => {
+      if (isBomb(c)) return 1000 + c.main;
+      const after = minus(x.cnt, c.ranks);
+      const breaks = Math.max(0, handCost(after) - (before - 1));
+      const brokenBombs = Math.max(0, bombs - bombCount(after));
+      const tier = breaks + 3 * brokenBombs + (isControl(c) ? 1 : 0);
+      return tier * 100 + c.main;
+    };
+    combos = beatsOf(x.cnt, v.lastPlay)
+      .map((c) => ({ c, k: rank(c) }))
+      .sort((a, b) => a.k - b.k)
+      .map((s) => s.c);
+  } else combos = leadOrder(v);
+  const list = combos.map((c) => pickCards(x.hand, c.ranks)!);
+  if (first.type !== 'play') return { pass: true, fromTeammate, moves: list };
+  const key = first.cards.slice().sort().join();
+  return { pass: false, fromTeammate, moves: [first.cards, ...list.filter((l) => l.slice().sort().join() !== key)] };
 }
 
 export const bot: Bot<View, Action> = {
