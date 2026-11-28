@@ -3,7 +3,7 @@
  * 复现首版权重，从仓库根目录运行（基准源码放在仓库内才能解析 SDK）。
  * mkdir -p games/guandan/.baseline/teacher
  * git archive da10f0b games/guandan/src | tar -x -C games/guandan/.baseline/teacher --strip-components=3
- * node games/guandan/scripts/train-opening.ts games/guandan/.baseline/teacher 400001 3200
+ * node --experimental-strip-types games/guandan/scripts/train-opening.ts games/guandan/.baseline/teacher 400001 3200
  */
 import { SeededRng } from '@couju/sdk';
 import { resolve } from 'node:path';
