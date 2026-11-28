@@ -145,20 +145,37 @@ export function Board(props: TurnUIProps<View, Action>) {
   useEffect(() => {
     if (iJustPassed) setSelected(new Set());
   }, [iJustPassed, v.history.length]);
-  useEffect(() => setHintIdx(0), [trickKey]);
-  const hintList = useMemo(() => (myTurn ? hints(v) : []), [myTurn, trickKey, handKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** 点"提示"时 bot 给的话，比如"建议不要" */
+  const [hintNote, setHintNote] = useState<string | null>(null);
+  useEffect(() => {
+    setHintIdx(0);
+    setHintNote(null);
+  }, [trickKey]);
+  const hintInfo = useMemo(() => (myTurn ? hints(v) : null), [myTurn, trickKey, handKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // bot 自己会"不要"时，第一下提示先说建议不要，再点才轮着给能压的牌
+  const hintSteps: (string[] | 'pass')[] = hintInfo ? [...(hintInfo.pass ? (['pass'] as const) : []), ...hintInfo.moves] : [];
+  const canHint = !!hintInfo && hintInfo.moves.length > 0;
 
   // 单击切换一张，按住左键（手机上用手指）横着拖过一段批量选/取消，见 kit-cards 的 Hand
   const choose = (next: Set<string>) => {
     if (seat === null) return;
     setSelected(next);
+    setHintNote(null);
   };
   const play = () => act({ type: 'play', cards: v.hand.filter((c) => selected.has(c)) });
   const hint = () => {
-    if (hintList.length === 0) return;
-    setSelected(new Set(hintList[hintIdx % hintList.length]));
+    if (!canHint) return;
+    const step = hintSteps[hintIdx % hintSteps.length];
+    if (step === 'pass') {
+      setSelected(new Set());
+      setHintNote(hintInfo!.fromTeammate ? '队友的牌，建议不要；再点提示看能压的牌' : '建议不要，留着牌后面用；再点提示看能压的牌');
+    } else {
+      setSelected(new Set(step));
+      setHintNote(null);
+    }
     setHintIdx(hintIdx + 1);
   };
+  const passSuggested = hintNote !== null;
 
   const status = (() => {
     if (v.phase === 'ended') return null;
@@ -223,6 +240,7 @@ export function Board(props: TurnUIProps<View, Action>) {
 
         <div className={styles.status} aria-live="polite">
           {status && <span className={myTurn ? styles.myTurn : ''}>{status}</span>}
+          {canAct && hintNote && <span className={styles.hintNote}>{hintNote}</span>}
           {error && <span className={styles.error}>{error}</span>}
         </div>
 
@@ -239,6 +257,7 @@ export function Board(props: TurnUIProps<View, Action>) {
         {canAct && v.phase === 'playing' && (
           <div className={styles.actions}>
             <button
+              className={passSuggested ? styles.primary : undefined}
               disabled={!v.lastPlay}
               onClick={() => {
                 setSelected(new Set());
@@ -247,7 +266,7 @@ export function Board(props: TurnUIProps<View, Action>) {
             >
               不要
             </button>
-            <button onClick={hint} disabled={hintList.length === 0}>
+            <button onClick={hint} disabled={!canHint}>
               提示
             </button>
             <button className={styles.primary} disabled={selected.size === 0} onClick={play}>
