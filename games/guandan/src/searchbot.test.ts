@@ -1,7 +1,7 @@
 import { SeededRng } from '@couju/sdk';
 import { describe, expect, it } from 'vitest';
 import { decide as ruleDecide } from './bot.ts';
-import { isWild, makeDeck, valueOf } from './cards.ts';
+import { isWild, makeDeck, sortCards, valueOf } from './cards.ts';
 import { bestCandidate, candidates, deal, decide, handValue } from './searchbot.ts';
 import { hand } from './testhand.ts';
 import { active, apply, setup, validate, view, type HandSummary, type State } from './rules.ts';
@@ -33,10 +33,26 @@ describe('残局搜索', () => {
     }
   }, 60_000);
 
-  it('牌还多时不搜，直接用规则 bot 的决定', async () => {
+  it('开局领出沿用规则 bot 的选择', async () => {
     const s = endgame(5, 200);
     const v = view(s, s.turn);
     expect(await decide(v)).toEqual(ruleDecide(v));
+  });
+
+  it('打 J 开局，对手的 999 带 22 不值得用两张逢人配去接', async () => {
+    const rng = SeededRng.fromSeed(924023);
+    const dealt = setup({ rng, options: { length: 'one' } });
+    let s: State = { ...dealt, level: 11, teamLevels: [11, 11], hands: dealt.hands.map(h => sortCards(h, 11)) };
+    s = apply(s, 1, { type: 'play', cards: ['H02a', 'H02b', 'C02b', 'H04b', 'S04a'], as: { kind: 'fullHouse', main: 2 } }, { rng });
+    s = apply(s, 2, { type: 'play', cards: ['C09a', 'H09a', 'S09a', 'D02a', 'S02a'], as: { kind: 'fullHouse', main: 9 } }, { rng });
+    expect(await decide(view(s, 3))).toEqual({ type: 'pass' });
+  });
+
+  it('最后一张 K 能管对手的 3 拿头游，就当场出完', async () => {
+    const s = setup({ rng: SeededRng.fromSeed(924031), options: { length: 'one' } });
+    const v = { ...view(s, 0), turn: 0, hand: ['C13a'], counts: [1, 6, 10, 8],
+      lastPlay: { seat: 3, cards: ['H03b'], kind: 'single' as const, main: 3, size: 1 } };
+    expect(await decide(v)).toEqual({ type: 'play', cards: ['C13a'], as: { kind: 'single', main: 13 } });
   });
 
   it('被取消时交回规则 bot 的决定', async () => {

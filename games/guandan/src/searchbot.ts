@@ -5,6 +5,7 @@
  */
 import { SeededRng, type Bot, type Seat } from '@couju/sdk';
 import { isWild, makeDeck, rankOf, valueOf } from './cards.ts';
+import { chooseContest } from './contest.ts';
 import { beatsOf, bombsOf, decide as ruleDecide, leadOrder, naturalCost, type Move } from './bot.ts';
 import { isBomb, strength } from './patterns.ts';
 import { preserveFlush } from './preserve-flush.ts';
@@ -252,8 +253,15 @@ export function bestCandidate(sum: readonly number[], samples: number): number {
 async function searchDecision(v: View, signal?: AbortSignal): Promise<Action> {
   const first = ruleDecide(v);
   if (signal?.aborted || v.phase !== 'playing' || v.me === null) return first;
+  if (first.type === 'play' && first.cards.length === v.hand.length) {
+    // 对家已经头游时立即锁定双上；只剩两家时直接拿三游。
+    // 对手开单、自己最后一张能拿头游，也别让一次有噪声的推演把确定的胜局让出去。
+    const team = teamOf(v.me);
+    const winFirst = !v.finished.length && v.hand.length === 1 && v.lastPlay && teamOf(v.lastPlay.seat) !== team;
+    if (winFirst || v.finished.length === 2 || v.finished.some(seat => teamOf(seat) === team)) return first;
+  }
   const total = v.counts.reduce((a, b) => a + b, 0);
-  if (total > CARD_LIMIT) return first;
+  if (total > CARD_LIMIT) return chooseContest(v, first);
   const cands = candidates(v, first);
   if (cands.length < 2) return first;
   const me = v.me;

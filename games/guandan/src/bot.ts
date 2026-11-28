@@ -381,7 +381,7 @@ function minus(hand: readonly string[], cards: readonly string[]): string[] {
 }
 
 /** 跟出后的结构代价：带牌选择和跟牌决策共用同一标准。 */
-function remainingCost(hand: readonly string[], level: number, move: Move, beforeBombs: number): number {
+export function remainingCost(hand: readonly string[], level: number, move: Move, beforeBombs: number): number {
   const after = naturalShape(minus(hand, move.cards), level);
   // 跟普通牌时拆炸弹，比单纯多留一手牌更伤。
   const broken = isBomb(move.p) ? 0 : Math.max(0, beforeBombs - after.bombs);

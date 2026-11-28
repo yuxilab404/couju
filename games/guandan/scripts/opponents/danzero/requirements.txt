@@ -1,0 +1,3 @@
+numpy==2.5.5
+rlcard==1.2.0
+termcolor==3.3.0

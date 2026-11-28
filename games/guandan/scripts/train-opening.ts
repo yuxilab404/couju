@@ -11,6 +11,7 @@ import { pathToFileURL } from 'node:url';
 import { sortCards } from '../src/cards.ts';
 import { openingFeatures } from '../src/opening.ts';
 import { apply, setup, view, type State } from '../src/rules.ts';
+import { solveRidge } from './ridge.ts';
 
 if (!process.argv[2]) throw new Error('请指定基准规则 bot 的 src 目录');
 const teacher: typeof import('../src/bot.ts') = await import(pathToFileURL(resolve(process.argv[2], 'bot.ts')).href);
@@ -64,16 +65,4 @@ for (let seed = start; seed < start + count; seed++) {
 }
 
 // 解带 L2 正则的方程，正则项也让相关的牌型特征有唯一解。
-const d = matrix.length;
-if (!d) throw new Error('这些种子没有产生可比较的首攻');
-for (let i = 0; i < d; i++) matrix[i][i] += 25;
-for (let i = 0; i < d; i++) {
-  const pivot = matrix[i][i];
-  for (let j = i; j <= d; j++) matrix[i][j] /= pivot;
-  for (let k = 0; k < d; k++) {
-    if (k === i) continue;
-    const factor = matrix[k][i];
-    for (let j = i; j <= d; j++) matrix[k][j] -= factor * matrix[i][j];
-  }
-}
-console.log(JSON.stringify({ samples, weights: matrix.map((r) => Number(r[d].toFixed(4))) }));
+console.log(JSON.stringify({ samples, weights: solveRidge(matrix, 25) }));
