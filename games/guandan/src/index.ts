@@ -1,5 +1,5 @@
 import { defineTurnGame } from '@couju/sdk';
-import { bot } from './bot.ts';
+import { bot } from './searchbot.ts';
 import * as rules from './rules.ts';
 import type { Action, Options, State, View } from './rules.ts';
 import { Board } from './ui.tsx';
