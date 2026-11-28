@@ -7,6 +7,7 @@ import { SeededRng, type Bot, type Seat } from '@couju/sdk';
 import { isWild, makeDeck, rankOf, valueOf } from './cards.ts';
 import { beatsOf, bombsOf, decide as ruleDecide, leadOrder, naturalCost, type Move } from './bot.ts';
 import { isBomb, strength } from './patterns.ts';
+import { preserveFlush } from './preserve-flush.ts';
 import { apply, teamOf, type Action, type HandSummary, type State, type View } from './rules.ts';
 
 /**
@@ -248,7 +249,7 @@ export function bestCandidate(sum: readonly number[], samples: number): number {
  * 先给每个候选打 FIRST 次，只留前 KEEP 名（规则 bot 的选择总留着）再接着打，
  * 一共打 BUDGET 次左右。
  */
-export async function decide(v: View, signal?: AbortSignal): Promise<Action> {
+async function searchDecision(v: View, signal?: AbortSignal): Promise<Action> {
   const first = ruleDecide(v);
   if (signal?.aborted || v.phase !== 'playing' || v.me === null) return first;
   const total = v.counts.reduce((a, b) => a + b, 0);
@@ -262,19 +263,25 @@ export async function decide(v: View, signal?: AbortSignal): Promise<Action> {
   const sum = new Array<number>(cands.length).fill(0);
   let alive = cands.map((_, i) => i);
   let n = 0;
-  const sample = () => {
+  // 时间只决定何时把主线程还给浏览器。抽样数量和选牌结果与设备速度无关。
+  let yieldAt = performance.now() + 8;
+  const sample = async () => {
     const base = stateOf(v, sampleHands(rng));
     const seed = rng.int(1 << 30);
     for (const i of alive) {
       const s = apply(base, me, cands[i], { rng: SeededRng.fromSeed(seed) });
       sum[i] += rollout(s, team, SeededRng.fromSeed(seed), v.opts.length === 'full');
+      if (performance.now() >= yieldAt) {
+        await yieldNow();
+        if (signal?.aborted) return false;
+        yieldAt = performance.now() + 8;
+      }
     }
     n++;
+    return true;
   };
   for (let k = 0; k < FIRST; k++) {
-    sample();
-    if (k % 4 === 3) await yieldNow();
-    if (signal?.aborted) return first;
+    if (signal?.aborted || !await sample()) return first;
   }
   if (alive.length > KEEP) {
     const rest = alive.slice(1).sort((a, b) => sum[b] - sum[a]).slice(0, KEEP - 1);
@@ -283,12 +290,16 @@ export async function decide(v: View, signal?: AbortSignal): Promise<Action> {
   }
   const more = Math.max(0, Math.floor((BUDGET - FIRST * cands.length) / alive.length));
   for (let k = 0; k < more; k++) {
-    sample();
-    if (k % 4 === 3) await yieldNow();
-    if (signal?.aborted) return first;
+    if (signal?.aborted || !await sample()) return first;
   }
   // 规则 bot 的选择有个小优势：平均每副要好出 MARGIN 级才换，免得为抽样噪声换掉它
   return cands[bestCandidate(sum, n)];
+}
+
+/** 真实出口才换等价花色；内部规则推演保留便宜的按点数策略。 */
+export async function decide(v: View, signal?: AbortSignal): Promise<Action> {
+  const action = await searchDecision(v, signal);
+  return signal?.aborted ? action : preserveFlush(v, action);
 }
 
 export const bot: Bot<View, Action> = {

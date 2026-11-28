@@ -88,6 +88,25 @@ describe('跟牌', () => {
     const sixes = moves.find((m) => m.p.kind === 'fullHouse' && m.p.main === 6)!;
     expect(sixes.cards.slice().sort()).toEqual(hand('6 6 6 9 9').slice().sort());
   });
+  it('三带二带另一对，保留完整连对作为最后一手', () => {
+    const v = viewOf(['3 3 4 4 5 5 6 6 6 K K', '7 7 8 8 9 9 10 10', '8 8 9 9 10 10 J J', '9 9 10 10 J J Q Q'], {
+      lastPlay: prevBy(1, '5 5 5 9 9'),
+    });
+    const a = decide(v);
+    expect(a).toMatchObject({ type: 'play', as: { kind: 'fullHouse', main: 6 } });
+    if (a.type === 'play') {
+      expect(a.cards.slice().sort()).toEqual(hand('6 6 6 K K').slice().sort());
+      const rest = v.hand.filter((c) => !a.cards.includes(c));
+      expect(interpret(rest, 2, null)).toMatchObject({ kind: 'tube', size: 6 });
+    }
+  });
+  it('三带二选带对时把配牌的消耗一起计分', () => {
+    const prev = prevBy(1, '5 5 5 3 3');
+    const moves = beatsOf(hand('h2 4 6 6 6 9 9'), 2, prev);
+    const sixes = moves.find((m) => m.p.kind === 'fullHouse' && m.p.main === 6)!;
+    expect(sixes.cards.slice().sort()).toEqual(hand('6 6 6 9 9').slice().sort());
+    expect(interpret(sixes.cards, 2, prev, sixes.as)).not.toBeNull();
+  });
   it('对手报单时拆大对封口，不出小单张让下家走', () => {
     const v = viewOf(['4 K K', 'Q', '3 3 6 6', '8 8'], { lastPlay: prevBy(3, '3') });
     expect(decide(v)).toMatchObject({ type: 'play', as: { kind: 'single', main: 13 } });
@@ -97,6 +116,13 @@ describe('跟牌', () => {
 it('对手报单而自己全是单张时，先出最大单张封口', () => {
   const v = viewOf(['4 7 2', 'Q', '3 3 6 6', '8 8']);
   expect(decide(v)).toMatchObject({ type: 'play', as: { kind: 'single', main: 15 } });
+});
+
+it('开局能用 QQ、KK、AA 出最大木板时，留下配牌和五张 7 的炸弹', () => {
+  const s = setup({ rng: SeededRng.fromSeed(550001) });
+  const a = decide(view(s, s.turn));
+  expect(a).toMatchObject({ type: 'play', as: { kind: 'tube', main: 14 } });
+  expect(validate(s, s.turn, a)).toBeNull();
 });
 
 describe('进贡', () => {

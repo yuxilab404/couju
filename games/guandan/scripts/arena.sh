@@ -22,7 +22,7 @@ trap 'rm -rf "$tmp"' EXIT
 trap 'exit 1' HUP INT TERM
 old="$tmp/src"
 mkdir -p "$old"
-git -C "$root" archive "$REF" games/guandan/src | tar -x -C "$old" --strip-components=3
+git -C "$root" archive "$REF" games/guandan/src | tar -x -C "$old" --strip-components=3 --exclude='*.test.*'
 out="$tmp/out"
 mkdir -p "$out"
 pids=""

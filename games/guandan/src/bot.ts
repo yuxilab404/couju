@@ -8,6 +8,7 @@ import type { Seat } from '@couju/sdk';
 import { countNatural, isWild, rankOf, suitOf, SUITS, valueOf, valueOfRank, wildsOf } from './cards.ts';
 import { beats, interpret, isBomb, parse, rankAt, strength, type Kind, type Pattern } from './patterns.ts';
 import { outstanding } from './counter.ts';
+import { chooseOpening } from './opening.ts';
 import { partnerOf, returnable, tributeValue, type Action, type View } from './rules.ts';
 
 /** 拆牌里的一手：ranks 是每张牌的自然点数（A = 14），用到配牌时也写它当的点数 */
@@ -280,6 +281,7 @@ export function beatsOf(hand: readonly string[], level: number, prev: Pattern): 
       break;
     case 'fullHouse': {
       const cnt = countNatural(hand, level);
+      let beforeBombs: number | undefined;
       for (let t = 2; t <= 14; t++) {
         if (v(t) <= prev.main) continue;
         const opts = ALL_RANKS.filter((p) => p !== t)
@@ -288,10 +290,28 @@ export function beatsOf(hand: readonly string[], level: number, prev: Pattern): 
           // 带牌不拆炸弹；用配牌一样多时，先带低对，保留级牌和王对作控制。
           .sort((a, b) => Number(cnt[a.rank] >= 4) - Number(cnt[b.rank] >= 4)
             || wildsOf(a.cards, level).length - wildsOf(b.cards, level).length || v(a.rank) - v(b.rank));
-        for (const { cards } of opts) {
-          const m = moveOf(cards, level, { kind: 'fullHouse', main: v(t), size: 5 }, prev);
-          if (m) { out.push(m); break; }
+        if (opts.length === 0) continue;
+        // 两张配牌可声明成不同点数的带对，但实际是同一手牌，只评一次。
+        const seen = new Set<string>();
+        const moves = opts.filter(({ cards }) => {
+          const key = cards.join();
+          if (seen.has(key)) return false;
+          seen.add(key);
+          return true;
+        }).map(({ cards }) => moveOf(cards, level, { kind: 'fullHouse', main: v(t), size: 5 }, prev))
+          .filter((m): m is Move => m !== null);
+        if (moves.length === 0) continue;
+        let best = moves[0];
+        if (moves.length > 1) {
+          beforeBombs ??= naturalShape(hand, level).bombs;
+          let bestCost = remainingCost(hand, level, best, beforeBombs);
+          for (let i = 1; i < moves.length; i++) {
+            const cost = remainingCost(hand, level, moves[i], beforeBombs);
+            if (cost < bestCost) { best = moves[i]; bestCost = cost; }
+          }
         }
+        // 不只看带对大小：带掉小对若会拆散连对/顺子，宁可带另一对。
+        out.push(best);
       }
       break;
     }
@@ -358,6 +378,14 @@ export function bombsOf(hand: readonly string[], level: number, prev: Pattern | 
 function minus(hand: readonly string[], cards: readonly string[]): string[] {
   const s = new Set(cards);
   return hand.filter((c) => !s.has(c));
+}
+
+/** 跟出后的结构代价：带牌选择和跟牌决策共用同一标准。 */
+function remainingCost(hand: readonly string[], level: number, move: Move, beforeBombs: number): number {
+  const after = naturalShape(minus(hand, move.cards), level);
+  // 跟普通牌时拆炸弹，比单纯多留一手牌更伤。
+  const broken = isBomb(move.p) ? 0 : Math.max(0, beforeBombs - after.bombs);
+  return after.cost + 0.8 * wildsOf(move.cards, level).length + BOMB_BREAK * broken;
 }
 
 function isControl(p: Pattern): boolean {
@@ -479,6 +507,9 @@ function lead(v: View): Action {
     const strong = order.find((m) => isControl(m.p));
     if (strong) return act(strong);
   }
+  if (order.length >= 3 && x.partnerCount > 2 && v.counts.reduce((n, count) => n + count, 0) > 50) {
+    return act(chooseOpening(v, order, planHand));
+  }
   if (order.length) return act(order[0]);
   const low = x.hand.slice().sort((a, b) => valueOf(a, x.level) - valueOf(b, x.level))[0];
   return { type: 'play', cards: [low], as: { kind: 'single', main: valueOf(low, x.level) } };
@@ -497,12 +528,7 @@ function follow(v: View): Action {
 
   const shape = naturalShape(x.hand, x.level);
   const before = shape.cost;
-  const scored = cands.map((m) => {
-    const sh = naturalShape(minus(x.hand, m.cards), x.level);
-    // 为了跟一手普通牌拆掉炸弹：炸弹比一手牌值钱得多
-    const broken = isBomb(m.p) ? 0 : Math.max(0, shape.bombs - sh.bombs);
-    return { m, after: sh.cost + 0.8 * wildsOf(m.cards, x.level).length + BOMB_BREAK * broken };
-  });
+  const scored = cands.map((m) => ({ m, after: remainingCost(x.hand, x.level, m, shape.bombs) }));
   const normal = scored
     .filter((s) => !isBomb(s.m.p))
     .sort((a, b) => {
