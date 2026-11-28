@@ -293,6 +293,73 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
   await shot(page, '掼蛋结算');
 });
 
+test('手机竖屏用手指打完一局炸金花（6 人桌）', async ({ page }, info) => {
+  await login(page, `${info.project.name}-zjh@e2e.test`);
+  await page.getByRole('button', { name: '建房' }).tap();
+  await page.getByLabel('游戏').selectOption({ label: '炸金花' });
+  // 人数最多的桌：座位最挤
+  await page.getByLabel('人数').selectOption('6');
+  await expect(page.locator('.seats > *')).toHaveCount(6);
+  await expectFits(page, '炸金花房间');
+  await shot(page, '炸金花房间');
+  await checkRules(page, '炸金花', '炸金花规则', '235 吃豹子');
+  await page.getByRole('button', { name: '开始' }).tap();
+
+  await expect(page.locator('[data-pot]')).toBeVisible();
+  await expect(page.locator('[data-seat]')).toHaveCount(5);
+  await expectFits(page, '炸金花牌桌');
+  await shot(page, '炸金花牌桌');
+
+  const result = page.getByRole('heading', { name: '本局结束' });
+  const look = page.getByRole('button', { name: '看牌', exact: true });
+  const call = page.getByRole('button', { name: /^(闷跟|跟注) \d+$/ });
+  const raise = page.getByRole('button', { name: '加注', exact: true });
+  const compare = page.getByRole('button', { name: '比牌', exact: true });
+  let step = 0;
+  let checkedMenus = false;
+  // 按时间兜底：bot 有思考延迟、比牌要停 2 秒多（ADR-0008）
+  const until = Date.now() + 240_000;
+  while (Date.now() < until && !(await result.isVisible())) {
+    if (await call.isVisible()) {
+      if (step === 0) {
+        await expectFits(page, '炸金花轮到我');
+        await shot(page, '炸金花轮到我');
+        // 加注的二级按钮在竖屏里放得下，再收起来（前面的人已经加到顶就没得加）
+        if (await raise.isEnabled()) {
+          await raise.tap();
+          await expect(page.getByRole('button', { name: /^加到 \d+/ }).first()).toBeVisible();
+          await expectFits(page, '炸金花加注档位');
+          await shot(page, '炸金花加注档位');
+          await raise.tap();
+        }
+        await call.tap();
+      } else if ((await look.isVisible()) && (await look.isEnabled())) {
+        await look.tap();
+        await expect(page.locator('[data-myhand] [data-card]')).toHaveCount(3);
+        await expectFits(page, '炸金花看牌后');
+        await shot(page, '炸金花看牌后');
+      } else if (await compare.isEnabled()) {
+        await compare.tap();
+        const target = page.getByRole('button', { name: /比（下 \d+）$/ }).first();
+        await expect(target).toBeVisible();
+        if (!checkedMenus) {
+          checkedMenus = true;
+          await expectFits(page, '炸金花选比牌对象');
+          await shot(page, '炸金花选比牌对象');
+        }
+        await target.tap();
+      } else await call.tap();
+      step++;
+    }
+    await page.waitForTimeout(250);
+  }
+  await expect(result).toBeVisible();
+  await expect(page.getByRole('dialog', { name: '本局结束' })).toBeInViewport({ ratio: 1 });
+  await expect(page.locator('[data-seat] [data-card]')).toHaveCount(15);
+  await expectFits(page, '炸金花结算');
+  await shot(page, '炸金花结算');
+});
+
 test('手机竖屏：三个真人打完一局斗地主，结算和资料页显示积分', async ({ page, browser }, info) => {
   const p = info.project.name;
   const others = [];
