@@ -239,6 +239,17 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
   await expectFits(page, '掼蛋房间');
   await shot(page, '掼蛋房间');
   await checkRules(page, '掼蛋', '掼蛋规则', '10 张炸弹');
+  // 手指换座选队友：点自己座位的"换座"，选中状态下也放得下，再点 2 号位"换到这"
+  const seat = (i: number) => page.locator('.seats > *').nth(i);
+  const me = `${info.project.name}-gd`;
+  await expect(seat(0)).toContainText(me);
+  await seat(0).getByRole('button', { name: '换座' }).tap();
+  await expect(seat(1).getByRole('button', { name: '换到这' })).toBeVisible();
+  await expectFits(page, '掼蛋换座中');
+  await shot(page, '掼蛋换座中');
+  await seat(1).getByRole('button', { name: '换到这' }).tap();
+  await expect(seat(1)).toContainText(me);
+  await expect(seat(0)).not.toContainText(me);
   await page.getByRole('button', { name: '开始' }).tap();
 
   const hand = page.locator('[data-card][aria-pressed]');
