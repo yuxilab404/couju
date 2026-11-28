@@ -20,7 +20,7 @@ export interface RoomConfig {
 export interface RoomPublic {
   config: RoomConfig;
   seats: SeatSlot[];
-  /** 掉线托管中的座位 */
+  /** 托管中的座位：掉线托管和自己点的托管都在里面 */
   hosted: Seat[];
   phase: RoomPhase;
   /** 键：`u<userId>` 或 `b<seat>` */
@@ -49,7 +49,9 @@ export type RatingStatus = MatchRating | 'pending' | null;
 export type ToHost =
   | { k: 'hello' }
   | { k: 'sit'; seat: Seat | null }
-  | { k: 'act'; seq: number; action: unknown };
+  | { k: 'act'; seq: number; action: unknown }
+  /** 自己点托管 / 取消托管（ADR-0009）；只在对局中、坐在这一局里时有效 */
+  | { k: 'auto'; on: boolean };
 
 /** 房主 → 成员 */
 export type ToMember =
@@ -81,6 +83,8 @@ export interface Checkpoint {
    * TODO(del-when: 积分上线一周后，旧版本写的快照都已过期)：旧快照没有这个字段，按空处理
    */
   unrated?: MatchReport[];
+  /** 自己点了托管的座位（ADR-0009），换房主后照样托管。旧快照没有这个字段，按空处理 */
+  manual?: Seat[];
 }
 
 export interface GameEnvelope {

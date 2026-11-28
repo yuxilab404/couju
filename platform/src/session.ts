@@ -40,7 +40,7 @@ export interface RoomState {
   notice: string | null;
 }
 
-const KNOWN_TO_HOST = new Set(['hello', 'sit', 'act']);
+const KNOWN_TO_HOST = new Set(['hello', 'sit', 'act', 'auto']);
 const KNOWN_TO_MEMBER = new Set(['sync', 'reject']);
 
 export class RoomSession {
@@ -80,6 +80,11 @@ export class RoomSession {
 
   sit(seat: Seat | null): void {
     this.toHost({ k: 'sit', seat });
+  }
+
+  /** 托管 / 取消托管自己的座位（ADR-0009） */
+  setAuto(on: boolean): void {
+    if (!this.toHost({ k: 'auto', on })) this.state.set({ error: '网络断开了，连上后再试' });
   }
 
   leave(): void {

@@ -160,3 +160,41 @@ test('房主关掉页面，另一个人接手继续打', async ({ browser }) => 
   await hostCtx.close();
   await friendCtx.close();
 });
+
+test('非房主的人点托管：机器人替他打完，房主那边看到托管中', async ({ browser }) => {
+  const hostCtx = await browser.newContext();
+  const friendCtx = await browser.newContext();
+  const host = await hostCtx.newPage();
+  const friend = await friendCtx.newPage();
+  await login(host, 'admin5@e2e.test');
+  const add = await host.request.post('api/admin/whitelist', { data: { email: 'friend2@e2e.test', remark: 'e2e' } });
+  expect(add.ok()).toBe(true);
+  await login(friend, 'friend2@e2e.test');
+
+  await host.getByRole('button', { name: '建房' }).click();
+  await expect(host).toHaveURL(/\/game\/room\/[a-z0-9]{6}$/);
+  await friend.goto(host.url());
+  await expect(friend.getByText('等房主开始')).toBeVisible();
+  // 等人阶段没有托管按钮
+  await expect(friend.getByRole('button', { name: '托管', exact: true })).toBeHidden();
+  await host.getByRole('button', { name: '开始' }).click();
+
+  const banner = friend.getByRole('status').filter({ hasText: '托管中' });
+  const hostedTag = host.getByText('托管中', { exact: true });
+  await friend.getByRole('button', { name: '托管', exact: true }).click();
+  await expect(banner).toBeVisible();
+  await expect(hostedTag).toBeVisible();
+  // 取消：两边都收回
+  await banner.getByRole('button', { name: '取消托管' }).click();
+  await expect(banner).toBeHidden();
+  await expect(hostedTag).toBeHidden();
+  // 再托管一次，之后朋友什么都不点，房主打完这一局
+  await friend.getByRole('button', { name: '托管', exact: true }).click();
+  await expect(banner).toBeVisible();
+  await playUntilEnd(host);
+  await expect(friend.getByRole('heading', { name: '本局结束' })).toBeVisible();
+  // 这局结束，托管跟着结束
+  await expect(banner).toBeHidden();
+  await hostCtx.close();
+  await friendCtx.close();
+});
