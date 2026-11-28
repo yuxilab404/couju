@@ -7,7 +7,9 @@ import { SeededRng, type Bot, type Seat } from '@couju/sdk';
 import { makeDeck } from './cards.ts';
 import { beatsOf, bombsOf, decide as ruleDecide, leadOrder, type Move } from './bot.ts';
 import { isBomb, strength } from './patterns.ts';
-import { apply, teamOf, type Action, type State, type View } from './rules.ts';
+import { evaluate, type Net } from './value.ts';
+import { VALUE_WEIGHTS } from './value-weights.ts';
+import { apply, type Action, type State, type View } from './rules.ts';
 
 /**
  * 参数是用 scripts/arena.sh 对打调出来的（2026-11）：
@@ -16,15 +18,31 @@ import { apply, teamOf, type Action, type State, type View } from './rules.ts';
 /** 最多比较几个候选出法 */
 const MAX_CANDS = 6;
 /** 全场剩几张牌以内才搜 */
-const CARD_LIMIT = 50;
+const CARD_LIMIT = Number(env('LIM', 50));
 /** 每个候选先打几次 */
 const FIRST = 12;
 /** 粗筛后留几个候选 */
 const KEEP = 3;
 /** 一步一共大约推演几次 */
-const BUDGET = 128;
+const BUDGET = Number(env('B', 128));
 /** 平均每副要比规则 bot 的选择好出这么多级才换 */
-const MARGIN = 0.2;
+const MARGIN = Number(env('M', 0.2));
+const DEPTH = Number(env('D', 400));
+
+function env(k: string, d: number): number {
+  return Number((globalThis as { process?: { env: Record<string, string | undefined> } }).process?.env[k] ?? d);
+}
+
+function decodeF32(b64: string): Float32Array {
+  const bin = atob(b64);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new Float32Array(bytes.buffer);
+}
+
+const NET: Net | null = VALUE_WEIGHTS.length
+  ? { layers: VALUE_WEIGHTS.map((L) => ({ inp: L.inp, out: L.out, w: decodeF32(L.w), b: decodeF32(L.b) })) }
+  : null;
 
 function hashOf(v: View): number {
   let h = 2166136261;
@@ -76,16 +94,18 @@ function stateOf(v: View, hands: string[][]): State {
   };
 }
 
-/** 用规则 bot 把这一副打完，返回我方净升级数 */
-function rollout(s: State, team: number, rng: SeededRng): number {
-  let guard = 0;
-  while (s.phase === 'playing' && guard++ < 400) {
+/** 用规则 bot 往下打 DEPTH 步（打完了就看结果，没打完让估值网络估），返回我方净升级数 */
+function rollout(s: State, me: number, rng: SeededRng): number {
+  let steps = 0;
+  while (s.phase === 'playing' && steps < DEPTH) {
     const seat = s.turn;
     s = apply(s, seat, ruleDecide(viewFor(s, seat)), { rng });
+    steps++;
   }
   const h = s.lastHand;
-  if (s.phase === 'playing' || !h) return 0;
-  return h.winTeam === team ? h.up : -h.up;
+  if (s.phase === 'playing') return NET ? evaluate(NET, s, me) : 0;
+  if (!h) return 0;
+  return h.winTeam === me % 2 ? h.up : -h.up;
 }
 
 function viewFor(s: State, seat: Seat): View {
@@ -142,7 +162,6 @@ export async function decide(v: View, signal?: AbortSignal): Promise<Action> {
   if (cands.length < 2) return first;
   const me = v.me;
   const rng = SeededRng.fromSeed(hashOf(v));
-  const team = teamOf(me);
   const sum = new Array<number>(cands.length).fill(0);
   let alive = cands.map((_, i) => i);
   let n = 0;
@@ -151,7 +170,7 @@ export async function decide(v: View, signal?: AbortSignal): Promise<Action> {
     const seed = rng.int(1 << 30);
     for (const i of alive) {
       const s = apply(base, me, cands[i], { rng: SeededRng.fromSeed(seed) });
-      sum[i] += rollout(s, team, SeededRng.fromSeed(seed));
+      sum[i] += rollout(s, me, SeededRng.fromSeed(seed));
     }
     n++;
   };
