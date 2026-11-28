@@ -399,6 +399,11 @@ export function Board(props: TurnUIProps<View, Action>) {
             <button className={styles.primary} disabled={chosen.length === 0} onClick={() => play()}>
               出牌
             </button>
+          </div>
+        )}
+        {/* "当×× 出"另起一行并预留高度：放在上一行里会把居中的按钮挤开，连点两下"提示"第二下就点到了"出牌" */}
+        {canAct && v.phase === 'playing' && (
+          <div className={[styles.actions, styles.altRow].join(' ')}>
             {alternatives.map((p) => (
               <button key={`${p.kind}${p.main}`} className={styles.alt} onClick={() => play({ kind: p.kind, main: p.main })}>
                 当{describe(p, v.level)}出
