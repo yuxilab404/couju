@@ -146,6 +146,7 @@
 .status { display: flex; gap: 12px; min-height: 20px; flex-wrap: wrap; justify-content: center; }
 .myTurn { color: #ffd54f; font-weight: 700; }
 .error { color: #ffab91; }
+.hintNote { color: #b3e5fc; }
 .actions { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
 .actions button {
   font-size: 16px;

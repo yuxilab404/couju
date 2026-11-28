@@ -599,24 +599,48 @@ export function decide(v: View): Action {
   }
 }
 
-/** 给"提示"按钮用：能出的组合，最推荐的在前 */
-export function hints(v: View): Move[] {
-  if (v.me === null || v.phase !== 'playing' || v.turn !== v.me) return [];
+/** "提示"按钮的内容：bot 建不建议不出，以及能出的牌（最推荐的在前） */
+export interface Hint {
+  /** bot 自己会选"不出"（比如牌是对家出的，或者压了要拆炸弹） */
+  pass: boolean;
+  /** 对家出的牌 */
+  fromPartner: boolean;
+  moves: Move[];
+}
+
+/**
+ * 给"提示"按钮用。第一条是 bot 自己会出的；其余按人的习惯排：
+ * 不拆牌的在前、拆牌或用配牌的在后，拆炸弹的再往后，同一档里从小到大；
+ * 级牌和王的单张、对子算控制牌往后放；炸弹最后，也是先不用配牌的、从小到大。
+ */
+export function hints(v: View): Hint {
+  const none: Hint = { pass: false, fromPartner: false, moves: [] };
+  if (v.me === null || v.phase !== 'playing' || v.turn !== v.me) return none;
   const x = ctxOf(v);
+  const first = decide(v);
+  const fromPartner = !!v.lastPlay && v.lastPlay.seat === x.partner;
   let list: Move[];
   if (v.lastPlay) {
+    const shape = naturalShape(x.hand, x.level);
+    const rank = (m: Move) => {
+      const sh = naturalShape(minus(x.hand, m.cards), x.level);
+      const wilds = wildsOf(m.cards, x.level).length;
+      const own = m.p.kind === 'bomb' || m.p.kind === 'jokerBomb' ? 1 : 0;
+      const brokenBombs = Math.max(0, shape.bombs - sh.bombs - own);
+      const breaks = Math.max(0, Math.round(sh.cost - (shape.cost - 1)));
+      const tier = breaks + wilds + 3 * brokenBombs + (isControl(m.p) && !isBomb(m.p) ? 1 : 0);
+      return (isBomb(m.p) ? 100_000 : 0) + tier * 1000 + strength(m.p);
+    };
     list = beatsOf(x.hand, x.level, v.lastPlay)
-      .map((m) => ({ m, k: Number(isBomb(m.p)) * 100 + naturalCost(minus(x.hand, m.cards), x.level) + wildsOf(m.cards, x.level).length }))
-      .sort((a, b) => a.k - b.k || strength(a.m.p) - strength(b.m.p))
+      .map((m) => ({ m, k: rank(m) }))
+      .sort((a, b) => a.k - b.k)
       .map((s) => s.m);
   } else list = leadOrder(v);
-  const first = decide(v);
-  if (first.type === 'play') {
-    const key = first.cards.slice().sort().join();
-    const p = interpret(first.cards, x.level, v.lastPlay, first.as)!;
-    return [{ cards: first.cards, as: first.as ?? { kind: p.kind, main: p.main }, p }, ...list.filter((m) => m.cards.slice().sort().join() !== key)];
-  }
-  return list;
+  if (first.type !== 'play') return { pass: true, fromPartner, moves: list };
+  const key = first.cards.slice().sort().join();
+  const p = interpret(first.cards, x.level, v.lastPlay, first.as)!;
+  const top: Move = { cards: first.cards, as: first.as ?? { kind: p.kind, main: p.main }, p };
+  return { pass: false, fromPartner, moves: [top, ...list.filter((m) => m.cards.slice().sort().join() !== key)] };
 }
 
 export { parse };

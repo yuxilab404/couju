@@ -244,13 +244,22 @@ export function Board(props: TurnUIProps<View, Action>) {
       setHintAs(null);
     }
   }, [iJustPassed, v.history.length]);
-  useEffect(() => setHintIdx(0), [trickKey]);
-  const hintList = useMemo(() => (myTurn ? hints(v) : []), [myTurn, trickKey, handKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  /** 点"提示"时 bot 给的话，比如"建议不出" */
+  const [hintNote, setHintNote] = useState<string | null>(null);
+  useEffect(() => {
+    setHintIdx(0);
+    setHintNote(null);
+  }, [trickKey]);
+  const hintInfo = useMemo(() => (myTurn ? hints(v) : null), [myTurn, trickKey, handKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  // bot 自己会"不出"时，第一下提示先说建议不出，再点才轮着给能压的牌
+  const hintSteps: (Move | 'pass')[] = hintInfo ? [...(hintInfo.pass ? (['pass'] as const) : []), ...hintInfo.moves] : [];
+  const canHint = !!hintInfo && hintInfo.moves.length > 0;
 
   const choose = (next: Set<string>) => {
     if (seat === null) return;
     setSelected(next);
     setHintAs(null);
+    setHintNote(null);
   };
   const chosen = v.hand.filter((c) => selected.has(c));
 
@@ -267,12 +276,20 @@ export function Board(props: TurnUIProps<View, Action>) {
     act({ type: 'play', cards: chosen, ...(use ? { as: use } : {}) });
   };
   const hint = () => {
-    if (hintList.length === 0) return;
-    const m = hintList[hintIdx % hintList.length];
-    setSelected(new Set(m.cards));
-    setHintAs(m.as);
+    if (!canHint) return;
+    const step = hintSteps[hintIdx % hintSteps.length];
+    if (step === 'pass') {
+      setSelected(new Set());
+      setHintAs(null);
+      setHintNote(hintInfo!.fromPartner ? '对家的牌，建议不出；再点提示看能压的牌' : '建议不出，留着牌后面用；再点提示看能压的牌');
+    } else {
+      setSelected(new Set(step.cards));
+      setHintAs(step.as);
+      setHintNote(null);
+    }
     setHintIdx(hintIdx + 1);
   };
+  const passSuggested = hintNote !== null;
 
   // 进贡/还贡：提示直接选好一张能交的牌
   const tributeHint = () => {
@@ -359,6 +376,7 @@ export function Board(props: TurnUIProps<View, Action>) {
 
         <div className={styles.status} aria-live="polite">
           {status && <span className={myTurn || myTribute ? styles.myTurn : ''}>{status}</span>}
+          {canAct && v.phase === 'playing' && hintNote && <span className={styles.hintNote}>{hintNote}</span>}
           {error && <span className={styles.error}>{error}</span>}
         </div>
 
@@ -384,6 +402,7 @@ export function Board(props: TurnUIProps<View, Action>) {
         {canAct && v.phase === 'playing' && (
           <div className={styles.actions}>
             <button
+              className={passSuggested ? styles.primary : undefined}
               disabled={!v.lastPlay}
               onClick={() => {
                 setSelected(new Set());
@@ -393,12 +412,17 @@ export function Board(props: TurnUIProps<View, Action>) {
             >
               不出
             </button>
-            <button onClick={hint} disabled={hintList.length === 0}>
+            <button onClick={hint} disabled={!canHint}>
               提示
             </button>
             <button className={styles.primary} disabled={chosen.length === 0} onClick={() => play()}>
               出牌
             </button>
+          </div>
+        )}
+        {/* "当×× 出"另起一行并预留高度：放在上一行里会把居中的按钮挤开，连点两下"提示"第二下就点到了"出牌" */}
+        {canAct && v.phase === 'playing' && (
+          <div className={[styles.actions, styles.altRow].join(' ')}>
             {alternatives.map((p) => (
               <button key={`${p.kind}${p.main}`} className={styles.alt} onClick={() => play({ kind: p.kind, main: p.main })}>
                 当{describe(p, v.level)}出

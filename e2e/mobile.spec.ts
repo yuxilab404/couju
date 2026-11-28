@@ -84,7 +84,8 @@ async function tapOnce(page: Page) {
     const hint = page.getByRole('button', { name: '提示' });
     if (await hint.isEnabled()) {
       await hint.tap();
-      await play.tap();
+      if (await play.isEnabled()) await play.tap();
+      else await page.getByRole('button', { name: '不要' }).tap();
     } else await page.getByRole('button', { name: '不要' }).tap();
   }
 }
@@ -93,6 +94,7 @@ async function tapOnce(page: Page) {
 async function tapUntilEnd(page: Page, maxSteps = 400) {
   const result = page.getByRole('heading', { name: '本局结束' });
   let checkedPlay = false;
+  let shotPassHint = false;
   for (let i = 0; i < maxSteps; i++) {
     if (await result.isVisible()) return;
     const bid3 = page.getByRole('button', { name: '3 分' });
@@ -109,7 +111,17 @@ async function tapUntilEnd(page: Page, maxSteps = 400) {
       const hint = page.getByRole('button', { name: '提示' });
       if (await hint.isEnabled()) {
         await hint.tap();
-        await play.tap();
+        // bot 会"不要"时第一下提示只是建议不要，不选牌
+        if (await play.isEnabled()) await play.tap();
+        else {
+          if (!shotPassHint) {
+            shotPassHint = true;
+            await expect(page.getByText('建议不要')).toBeVisible();
+            await expectFits(page, '提示建议不要');
+            await shot(page, '提示建议不要');
+          }
+          await page.getByRole('button', { name: '不要' }).tap();
+        }
       } else await page.getByRole('button', { name: '不要' }).tap();
     }
     await page.waitForTimeout(250);
@@ -270,6 +282,7 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
   const result = page.getByRole('heading', { name: '本局结束' });
   const play = page.getByRole('button', { name: '出牌' });
   let checkedPlay = false;
+  let shotPassHint = false;
   // 按时间而不是按轮数兜底：bot 有思考延迟、唬牌翻牌要停 3 秒多（ADR-0008），一局的长短看运气
   const until = Date.now() + 240_000;
   for (let i = 0; Date.now() < until && !(await result.isVisible()); i++) {
@@ -282,7 +295,17 @@ test('手机竖屏用手指打完一副掼蛋（4 人，三个机器人）', asy
       const hint = page.getByRole('button', { name: '提示' });
       if (await hint.isEnabled()) {
         await hint.tap();
-        await play.tap();
+        // bot 会"不出"时第一下提示只是建议不出，不选牌
+        if (await play.isEnabled()) await play.tap();
+        else {
+          if (!shotPassHint) {
+            shotPassHint = true;
+            await expect(page.getByText('建议不出')).toBeVisible();
+            await expectFits(page, '掼蛋提示建议不出');
+            await shot(page, '掼蛋提示建议不出');
+          }
+          await page.getByRole('button', { name: '不出' }).tap();
+        }
       } else await page.getByRole('button', { name: '不出' }).tap();
     }
     await page.waitForTimeout(250);
