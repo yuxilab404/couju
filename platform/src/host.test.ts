@@ -267,8 +267,35 @@ describe('HostEngine 开局随机排座', () => {
     for (let i = 0; i < 40 && io.lastSync(1)!.room.phase === 'playing'; i++) await vi.advanceTimersByTimeAsync(150);
   }
 
+  const teamed = { ...toy, id: 'toyteam', teams: (n: number) => Array.from({ length: n }, (_, i) => i % 2) };
+
+  it('有队伍的游戏：按等人时自己选的座位开局（选队友），换座只在这类游戏里有效', async () => {
+    const h = new HostEngine([toy, teamed], io, [member(1), member(2), member(3)], null, { botDelayMs: [100, 100], freeze: true });
+    h.setSeatCount(4);
+    // 没有队伍的游戏不让换座：开局反正要打乱
+    h.swapSeats(0, 1);
+    await flush();
+    expect(io.lastSync(1)!.room.seats[0]).toEqual({ kind: 'human', userId: 1 });
+    h.selectGame('toyteam');
+    h.setSeatCount(4);
+    await flush();
+    // 0、2 号位是一队。3 号用户先自己坐到空位，房主再帮忙换座，让 1 号和 2 号用户当队友
+    expect(io.lastSync(1)!.room.seats.map((x) => (x.kind === 'human' ? x.userId : x.kind))).toEqual([1, 2, 3, 'empty']);
+    h.onRelay(3, { k: 'sit', seat: 3 });
+    h.swapSeats(2, 3);
+    await flush();
+    const chosen = [{ kind: 'human', userId: 1 }, { kind: 'human', userId: 2 }, { kind: 'human', userId: 3 }, { kind: 'empty' }];
+    expect(io.lastSync(1)!.room.seats).toEqual(chosen);
+    h.swapSeats(1, 2);
+    await flush();
+    const want = [{ kind: 'human', userId: 1 }, { kind: 'human', userId: 3 }, { kind: 'human', userId: 2 }, { kind: 'empty' }];
+    expect(io.lastSync(1)!.room.seats).toEqual(want);
+    h.start();
+    await flush();
+    expect(io.lastSync(1)!.room.seats).toEqual([...want.slice(0, 3), { kind: 'bot' }]);
+  });
+
   it('再来一局：没有队伍的游戏重新随机排座；有队伍的游戏座位不变', async () => {
-    const teamed = { ...toy, id: 'toyteam', teams: (n: number) => Array.from({ length: n }, (_, i) => i % 2) };
     for (const [def, keep] of [[toy, false], [teamed, true]] as const) {
       io = new IO();
       // 只有一个真人、其他都是 bot：bot 自己打完
@@ -278,6 +305,7 @@ describe('HostEngine 开局随机排座', () => {
       h.start();
       await flush();
       const first = JSON.stringify(io.lastSync(1)!.room.seats);
+      if (keep) expect(first).toBe(JSON.stringify([{ kind: 'human', userId: 1 }, { kind: 'bot' }, { kind: 'bot' }, { kind: 'bot' }]));
       for (let i = 0; i < 12; i++) {
         // 真人也托管，整局让 bot 打完
         h.onRelay(1, { k: 'auto', on: true });

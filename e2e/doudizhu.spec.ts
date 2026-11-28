@@ -48,6 +48,9 @@ test('一个人 + 两个机器人打完一局斗地主，再来一局', async ({
   await page.getByRole('button', { name: '建房' }).click();
   await expect(page).toHaveURL(/\/game\/room\/[a-z0-9]{6}$/);
   await expect(page.getByText('空位会自动放机器人')).toBeVisible();
+  // 没有队伍的游戏开局随机排座，不提供换座
+  await expect(page.getByText('每局开局时随机排座')).toBeVisible();
+  await expect(page.getByRole('button', { name: '换座' })).toHaveCount(0);
   await page.getByRole('button', { name: '开始' }).click();
 
   // 拖拽批量选牌：按住左键从第 1 张拖到第 4 张，松开后这 4 张都选上；再从选中的牌拖回来就取消

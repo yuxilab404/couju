@@ -133,6 +133,7 @@ label > input, label > select { color: var(--text); font-size: 15px; }
 .room-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
 .seats { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
 .seat { border: 2px solid var(--line); border-radius: var(--radius); padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+.seat.selected { border-style: dashed; border-color: var(--accent); }
 .seat-no { font-size: 13px; color: var(--muted); }
 .slot { display: flex; align-items: center; gap: 8px; min-height: 36px; }
 .seat-actions { display: flex; flex-wrap: wrap; gap: 4px; }
