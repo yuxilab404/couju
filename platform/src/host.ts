@@ -70,7 +70,10 @@ export class HostEngine {
   private scoreboard: Record<string, number> = {};
   private round = 0;
   private game: LiveGame | null = null;
+  /** 托管中的座位 = 掉线托管 ∪ 自己点的托管（manual） */
   private hosted = new Set<Seat>();
+  /** 自己点了托管的座位（ADR-0009）：人在线也不收回，直到他取消、出手或这局结束 */
+  private manual = new Set<Seat>();
   private members = new Map<UserId, Member>();
   private offlineTimers = new Map<UserId, ReturnType<typeof setTimeout>>();
   private timer: TimerState | null = null;
@@ -158,6 +161,8 @@ export class HostEngine {
         return this.sit(from, msg.seat);
       case 'act':
         return this.act(from, msg.seq, msg.action);
+      case 'auto':
+        return this.setAuto(from, msg.on === true);
     }
   }
 
@@ -243,6 +248,7 @@ export class HostEngine {
     this.game.result = def.result(state);
     this.phase = 'playing';
     this.round++;
+    this.manual.clear();
     this.syncHosted(true);
     this.changed();
     this.schedule();
@@ -261,6 +267,7 @@ export class HostEngine {
     this.phase = 'waiting';
     this.game = null;
     this.hosted.clear();
+    this.manual.clear();
     // 不在线的人让出座位，bot 留着
     this.seats = this.seats.map((s) => (s.kind === 'human' && !this.members.get(s.userId)?.connected ? { kind: 'empty' } : s));
     this.changed();
@@ -320,14 +327,32 @@ export class HostEngine {
     if (this.phase !== 'playing' || !g) return reject('现在不能操作');
     const seat = this.seatOf(from);
     if (seat === null) return reject('你没有坐在这一局里');
-    if (this.hosted.has(seat)) {
-      // 人回来了，托管结束
-      this.hosted.delete(seat);
-      this.bots.get(seat)?.abort();
-      this.bots.delete(seat);
-    }
+    // 人自己出手了：不管是掉线回来还是点过托管，托管都结束
+    if (this.hosted.has(seat)) this.release(seat);
     const err = this.tryApply(seat, action);
     if (err) reject(err);
+  }
+
+  /** 自己点托管 / 取消托管：只在对局中、坐在这一局里时有效 */
+  private setAuto(from: UserId, on: boolean): void {
+    const seat = this.seatOf(from);
+    if (this.phase !== 'playing' || !this.game || seat === null) return this.sendSync(from);
+    if (on) {
+      this.manual.add(seat);
+      this.hosted.add(seat);
+    } else if (this.hosted.has(seat)) {
+      this.release(seat);
+    }
+    this.changed();
+    this.schedule();
+  }
+
+  /** 座位交还给真人：停掉正在替他想的 bot */
+  private release(seat: Seat): void {
+    this.manual.delete(seat);
+    this.hosted.delete(seat);
+    this.bots.get(seat)?.abort();
+    this.bots.delete(seat);
   }
 
   /** 返回 null 表示已应用 */
@@ -355,6 +380,9 @@ export class HostEngine {
 
   private finish(result: Result): void {
     this.phase = 'ended';
+    // 自己点的托管只管这一局；掉线托管的照旧显示，人还没回来
+    for (const seat of this.manual) this.hosted.delete(seat);
+    this.manual.clear();
     const keys = this.game!.env.seatKeys;
     result.scores?.forEach((d, seat) => {
       const k = keys[seat];
@@ -408,19 +436,27 @@ export class HostEngine {
   private syncHosted(immediate: boolean): void {
     if (this.phase !== 'playing') {
       this.hosted.clear();
+      this.manual.clear();
       return;
     }
     this.seats.forEach((slot, seat) => {
-      if (slot.kind !== 'human') return;
+      if (slot.kind !== 'human') {
+        this.manual.delete(seat);
+        return;
+      }
       const m = this.members.get(slot.userId);
       const pending = this.offlineTimers.get(slot.userId);
+      // 自己点的托管：在线也一直托管，掉线了更不用等宽限
+      if (this.manual.has(seat)) {
+        if (pending) clearTimeout(pending);
+        this.offlineTimers.delete(slot.userId);
+        this.hosted.add(seat);
+        return;
+      }
       if (m?.connected) {
         if (pending) clearTimeout(pending);
         this.offlineTimers.delete(slot.userId);
-        if (this.hosted.delete(seat)) {
-          this.bots.get(seat)?.abort();
-          this.bots.delete(seat);
-        }
+        if (this.hosted.has(seat)) this.release(seat);
         return;
       }
       if (this.hosted.has(seat) || pending) return;
@@ -648,6 +684,7 @@ export class HostEngine {
       round: this.round,
       game: this.game ? this.game.env : null,
       unrated: [...this.unrated.values()].map((u) => u.report),
+      manual: [...this.manual],
     };
   }
 
@@ -685,6 +722,8 @@ export class HostEngine {
       };
       // 上一任房主可能没来得及报或没收到回执：再报一次，服务端按 matchId 去重
       if (this.phase === 'ended') this.queueRating();
+      // TODO(del-when: 手动托管上线一周后，旧版本写的快照都已过期)：旧快照没有 manual
+      else for (const seat of cp.manual ?? []) if (this.seats[seat]?.kind === 'human') this.manual.add(seat);
     } else {
       this.phase = 'waiting';
     }

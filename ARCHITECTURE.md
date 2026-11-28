@@ -164,6 +164,7 @@ bot 的决定回来时局面可能已经变了（比如大模型思考了十秒�
 ### 4.5 掉线、重连、交接
 
 - **普通玩家掉线**：服务端通知房主；房主给他 30 秒宽限，过了就让 bot 托管这个座位（座位上显示"托管中"）。他重连后重新进房，房主把座位还给他、补发当前视图。
+- **手动托管**（[ADR-0009](./docs/adr/0009-manual-autoplay.md)）：对局中玩家可以自己点"托管"（中继消息 `auto`），bot 替他出，人在线也不收回；点"取消托管"、自己出一手或这局结束时收回，下一局不延续。房主把这些座位记在快照的 `manual` 里，换房主后照样托管。
 - **房主掉线（回合制）**：服务端等 15 秒让房主重连；超时就从在线成员里按入房顺序选新房主，把最新快照发给他。新房主检查快照的 `gameId` 和 `version` 跟自己加载的游戏一致，一致就从快照恢复、接着跑；不一致就提示刷新页面。老房主之后回来就是普通成员。
 - **房主掉线（实时）**：同样换房主，但游戏直接结束，回到等人。
 - **还没回应的操作**：交接瞬间在路上的 `act` 会丢。新房主恢复后给所有人重发视图，玩家看到还轮到自己就再点一次。
@@ -187,6 +188,7 @@ interface Checkpoint {
   scoreboard: Record<userId, number>;
   matchId: string; rating: MatchRating | null;  // 积分去重键和服务端回执（§4.6）
   unrated: MatchReport[];                        // 已结束、还没收到回执的积分上报（§4.6）
+  manual: Seat[];                                // 自己点了托管的座位（§4.5）
 }
 ```
 
@@ -209,7 +211,7 @@ interface Checkpoint {
 | S→C | `relay {from, data}` | 原样转发 |
 | 双向 | `ping` / `pong` | 保活，判断掉线 |
 
-`relay.data` 里是平台层自己的消息（`seat`、`act`、`view`、`reject`、`input`、`frame`、`chat`……），定义在 `platform/src/wire.ts`，服务端看不懂也不需要看懂。
+`relay.data` 里是平台层自己的消息（`seat`、`act`、`auto`、`view`、`reject`、`input`、`frame`、`chat`……），定义在 `platform/src/wire.ts`，服务端看不懂也不需要看懂。
 
 服务端只做不涉及游戏的兜底：单条消息 ≤ 64 KB，每个连接的发送频率上限，只有房主能发 `room.meta`/`room.checkpoint`。这些是防程序出错把服务器拖垮，不是防作弊。
 

@@ -229,6 +229,115 @@ describe('HostEngine', () => {
   });
 });
 
+describe('HostEngine 手动托管', () => {
+  const g = () => io.lastSync(1)!.game!;
+  const turn = () => (g().view as { turn: number }).turn;
+  /** 两个真人开局，并让 0 号座位（用户 1）先等到轮到自己 */
+  async function startedAtSeat0() {
+    const h = engine();
+    h.start();
+    await flush();
+    if (turn() !== 0) h.onRelay(2, { k: 'act', seq: 0, action: { add: 1 } });
+    await flush();
+    expect(turn()).toBe(0);
+    return h;
+  }
+
+  it('在线的人点托管：bot 替他出；取消后收回，不再替他出', async () => {
+    const h = await startedAtSeat0();
+    h.onRelay(1, { k: 'auto', on: true });
+    await flush();
+    expect(io.lastSync(2)!.room.hosted).toEqual([0]);
+    const seq = g().seq;
+    await vi.advanceTimersByTimeAsync(150);
+    expect(g().seq).toBe(seq + 1);
+    // 托管不会因为"人在线"被成员变化收回
+    h.membersChanged([member(1), member(2), member(3)]);
+    await flush();
+    expect(g().view).toMatchObject({ turn: 1 });
+    expect(io.lastSync(1)!.room.hosted).toEqual([0]);
+
+    h.onRelay(2, { k: 'act', seq: 1, action: { add: 1 } });
+    await flush();
+    expect(turn()).toBe(0);
+    h.onRelay(1, { k: 'auto', on: false });
+    await flush();
+    expect(io.lastSync(1)!.room.hosted).toEqual([]);
+    const seq2 = g().seq;
+    await vi.advanceTimersByTimeAsync(500);
+    expect(g().seq).toBe(seq2);
+  });
+
+  it('取消时 bot 正在想：这一手不出', async () => {
+    const h = await startedAtSeat0();
+    h.onRelay(1, { k: 'auto', on: true });
+    await vi.advanceTimersByTimeAsync(50);
+    h.onRelay(1, { k: 'auto', on: false });
+    const seq = g().seq;
+    await vi.advanceTimersByTimeAsync(200);
+    expect(g().seq).toBe(seq);
+  });
+
+  it('托管中自己出一手：托管结束', async () => {
+    const h = await startedAtSeat0();
+    const n = (g().view as { n: number }).n;
+    h.onRelay(1, { k: 'auto', on: true });
+    h.onRelay(1, { k: 'act', seq: 1, action: { add: 2 } });
+    await flush();
+    expect(io.lastSync(1)!.room.hosted).toEqual([]);
+    expect(g().view).toMatchObject({ n: n + 2, turn: 1 });
+  });
+
+  it('旁观者和等人阶段点托管没有效果', async () => {
+    const h = engine([member(1), member(2), member(3)]);
+    h.setSeatCount(2);
+    h.onRelay(1, { k: 'auto', on: true });
+    await flush();
+    expect(io.lastSync(1)!.room.hosted).toEqual([]);
+    h.start();
+    await flush();
+    h.onRelay(3, { k: 'auto', on: true });
+    await flush();
+    expect(io.lastSync(1)!.room.hosted).toEqual([]);
+  });
+
+  it('托管跟着快照交给新房主；这局结束后清掉', async () => {
+    const h = await startedAtSeat0();
+    h.onRelay(2, { k: 'auto', on: true });
+    await flush();
+    const cp: Checkpoint = JSON.parse(io.checkpoint);
+    expect(cp.manual).toEqual([1]);
+    h.dispose();
+
+    io = new IO();
+    io.myId = 2;
+    const h2 = engine([member(1), member(2)], cp);
+    await flush();
+    expect(io.lastSync(2)!.room.hosted).toEqual([1]);
+    // 1 号用户一直加 2，2 号座位由 bot 加 1，打到结束
+    for (let i = 0; i < 20 && io.lastSync(2)!.room.phase === 'playing'; i++) {
+      if ((io.lastSync(2)!.game!.view as { turn: number }).turn === 0) h2.onRelay(1, { k: 'act', seq: i, action: { add: 2 } });
+      await vi.advanceTimersByTimeAsync(150);
+    }
+    expect(io.lastSync(2)!.room.phase).toBe('ended');
+    expect(io.lastSync(2)!.room.hosted).toEqual([]);
+    h2.rematch();
+    await flush();
+    expect(io.lastSync(2)!.room.hosted).toEqual([]);
+    expect(JSON.parse(io.checkpoint).manual).toEqual([]);
+  });
+
+  it('托管中掉线：不等宽限，一直托管；回来也不收回', async () => {
+    const h = await startedAtSeat0();
+    h.onRelay(2, { k: 'auto', on: true });
+    h.membersChanged([member(1), member(2, false)]);
+    await vi.advanceTimersByTimeAsync(31_000);
+    h.membersChanged([member(1), member(2)]);
+    await flush();
+    expect(io.lastSync(1)!.room.hosted).toEqual([1]);
+  });
+});
+
 describe('HostEngine 积分上报', () => {
   /** 两个真人轮流加 2，打到结束 */
   async function playOut(h: HostEngine, users: number[]) {

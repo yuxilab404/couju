@@ -98,7 +98,7 @@ export interface SeatInfo {
   name: string;
   avatarUrl: string | null;
   kind: 'human' | 'bot';
-  /** 真人掉线后由 bot 托管 */
+  /** 真人掉线后、或自己点了托管，由 bot 替他出 */
   hosted: boolean;
   connected: boolean;
   team: number | null;

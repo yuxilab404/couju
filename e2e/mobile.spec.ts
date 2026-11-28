@@ -143,6 +143,15 @@ test('手机竖屏用手指从登录一路打完一局斗地主', async ({ page 
   await shot(page, '横屏牌桌');
   await page.setViewportSize(portrait);
 
+  // 手指点托管：提示条放得下，再点取消
+  await page.getByRole('button', { name: '托管', exact: true }).tap();
+  const banner = page.getByRole('status').filter({ hasText: '托管中' });
+  await expect(banner).toBeVisible();
+  await expectFits(page, '托管中');
+  await shot(page, '托管中');
+  await banner.getByRole('button', { name: '取消托管' }).tap();
+  await expect(banner).toBeHidden();
+
   await tapUntilEnd(page);
   const dialog = page.getByRole('dialog', { name: '本局结束' });
   await expect(dialog).toBeInViewport({ ratio: 1 });

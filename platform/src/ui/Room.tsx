@@ -43,7 +43,7 @@ export function Room({ roomId }: { roomId: string | null }) {
   const def = findGame(games, st.room.config.gameId);
   return (
     <div className="room">
-      <RoomBar st={st} def={def} />
+      <RoomBar st={st} def={def} session={session} />
       {st.notice && <div className="notice">{st.notice}</div>}
       {!def ? (
         <div className="card">这个房间的游戏在你的版本里没有，请刷新页面。</div>
@@ -56,9 +56,17 @@ export function Room({ roomId }: { roomId: string | null }) {
   );
 }
 
-function RoomBar({ st, def }: { st: RoomState; def: AnyGameDef | undefined }) {
+/** 我在这一局里的座位，以及它是不是托管中；不在局里（旁观、等人、已结束）时为 null */
+function myPlayingSeat(st: RoomState): { seat: number; hosted: boolean } | null {
+  const seat = st.game?.seat ?? null;
+  if (st.room?.phase !== 'playing' || seat === null) return null;
+  return { seat, hosted: st.room.hosted.includes(seat) };
+}
+
+function RoomBar({ st, def, session }: { st: RoomState; def: AnyGameDef | undefined; session: RoomSession }) {
   const [copied, setCopied] = useState(false);
   const host = st.members.find((m) => m.id === st.hostId);
+  const mine = myPlayingSeat(st);
   return (
     <div className="room-bar">
       <strong>{def?.name ?? '房间'}</strong>
@@ -78,6 +86,12 @@ function RoomBar({ st, def }: { st: RoomState; def: AnyGameDef | undefined }) {
         {copied ? '已复制' : '复制邀请链接'}
       </button>
       <span className="spacer" />
+      {/* 托管中时"取消托管"在牌桌上方的提示条里 */}
+      {mine && !mine.hosted && (
+        <button className="small" title="让机器人替你出牌，随时可以取消" onClick={() => session.setAuto(true)}>
+          托管
+        </button>
+      )}
       <button className="small" onClick={() => navigate('/')}>
         离开
       </button>
@@ -306,9 +320,18 @@ function Playing({ st, session, def }: { st: RoomState; session: RoomSession; de
   const Ui = (def as TurnGameDef<unknown, unknown, unknown, unknown>).ui;
   // 最后一下的动画（比如翻牌、枪响）放完再弹结算
   const ended = room.phase === 'ended' && settled;
+  const mine = myPlayingSeat(st);
   return (
     <div className="playing">
       {game.seat === null && <div className="notice">你在旁观这一局</div>}
+      {mine?.hosted && (
+        <div className="notice autoplay" role="status">
+          <span>托管中，机器人替你出牌</span>
+          <button className="small primary" onClick={() => session.setAuto(false)}>
+            取消托管
+          </button>
+        </div>
+      )}
       {st.error && <div className="notice error">{st.error}</div>}
       <div className="board">
         {/* 每局换一个 key：新开一局画面从头挂载，发牌之类的入场动画重新放 */}

@@ -88,6 +88,7 @@ label > input, label > select { color: var(--text); font-size: 15px; }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; }
 .notice { background: #fff4d6; color: #6b5300; border-radius: 8px; padding: 6px 12px; font-size: 14px; }
 .notice.error { background: #fde2df; color: var(--error); }
+.notice.autoplay { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 @media (prefers-color-scheme: dark) {
   .notice { background: #4a3f1c; color: #f2dc9b; }
   .notice.error { background: #4a2420; color: #f3b3ab; }

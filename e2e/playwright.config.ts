@@ -35,7 +35,7 @@ export default defineConfig({
       COUJU_DATA_DIR: dataDir,
       COUJU_WEB_DIR: 'dist/web',
       COUJU_ADMIN_EMAILS: [
-        'admin@e2e.test,admin2@e2e.test,admin3@e2e.test,admin4@e2e.test',
+        'admin@e2e.test,admin2@e2e.test,admin3@e2e.test,admin4@e2e.test,admin5@e2e.test',
         // 手机项目每条用例一个邮箱（同一邮箱 60 秒内不能重发验证码）
         ...['phone-360', 'phone-412'].flatMap((p) => [
           `${p}@e2e.test`,
