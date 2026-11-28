@@ -86,3 +86,9 @@
   font-weight: 700;
 }
 .badge[data-badge='级'] { background: #f9a825; color: #3e2700; }
+
+/* 规则说明里的例牌：小牌叠着露出左边的点数 */
+.cardRow { display: inline-flex; vertical-align: middle; --cw: var(--card-w-small, 28px); }
+.cardRow > .card { --cw: var(--card-w-small, 28px); }
+.cardRow > .card + .card { margin-left: calc(var(--cw) * -0.45); }
+.cardRow[data-tight] > .card + .card { margin-left: calc(var(--cw) * -0.6); }

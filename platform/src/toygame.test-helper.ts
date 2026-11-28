@@ -31,4 +31,5 @@ export const toy = defineTurnGame<S, A, V>({
       : { winners: [s.winner], scores: Array.from({ length: s.players }, (_, i) => (i === s.winner ? 1 : 0)), summary: `${s.winner} 赢` },
   bot: { decide: () => ({ add: 1 }) },
   ui: () => null,
+  rules: () => null,
 });

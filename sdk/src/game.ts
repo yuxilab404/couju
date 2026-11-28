@@ -139,6 +139,18 @@ export interface RealtimeUIProps<V, I> {
   result: Result | null;
 }
 
+/**
+ * 规则说明的入参。平台在房间顶栏放"规则"按钮，点开弹窗画游戏给的 rules 组件（ADR-0010）。
+ * 等人时和对局中都能看；对局中顺带给出我的视图，规则里跟局面有关的部分（比如掼蛋本副打几）可以按当前局面写。
+ */
+export interface RulesProps<V, O> {
+  numPlayers: number;
+  /** 这个房间当前的可选规则 */
+  options: O;
+  /** 对局中（含刚结束）我看到的视图；等人时为 null */
+  view: V | null;
+}
+
 interface GameBase<S, V, O> {
   /** 进快照和大厅元数据，例如 'doudizhu' */
   id: string;
@@ -156,6 +168,8 @@ interface GameBase<S, V, O> {
   publicView?: boolean;
   /** 非 null 即结束 */
   result(s: S): Result | null;
+  /** 给人看的规则说明：怎么玩、牌型大小、计分。每个游戏都必须带（ADR-0010） */
+  rules: ComponentType<RulesProps<V, O>>;
 }
 
 export interface TurnGameDef<S, A, V, O = Record<string, never>> extends GameBase<S, V, O> {
