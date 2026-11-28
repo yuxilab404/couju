@@ -9,9 +9,15 @@ root=$(git -C "$here" rev-parse --show-toplevel)
 old="$here/../.baseline/src"
 rm -rf "$here/../.baseline" && mkdir -p "$old"
 git -C "$root" archive "$REF" games/guandan/src | tar -x -C "$old" --strip-components=3
+out="$here/../.baseline/out"; mkdir -p "$out"
+pids=""
 for i in $(seq 0 $((K - 1))); do
-  node --experimental-strip-types --no-warnings "$here/arena.ts" "$old" $per $((1000 + i * per)) &
-done | node -e '
+  node --experimental-strip-types --no-warnings "$here/arena.ts" "$old" $per $((1000 + i * per)) > "$out/$i.json" &
+  pids="$pids $!"
+done
+# 任何一个分片失败（比如 bot 出了非法动作）都算评测失败，不汇总残缺的结果
+for p in $pids; do wait "$p" || { echo "评测进程失败" >&2; exit 1; }; done
+cat "$out"/*.json | node -e '
 let t={hands:0,wins:0,pts:0,sq:0,pairs:0,slow:0},maxMs=0;
 require("readline").createInterface({input:process.stdin}).on("line",l=>{const o=JSON.parse(l);for(const k in t)t[k]+=o[k];maxMs=Math.max(maxMs,o.maxMs)}).on("close",()=>{
 const m=t.pts/t.pairs, se=Math.sqrt((t.sq/t.pairs-m*m)/t.pairs)/2;

@@ -38,19 +38,22 @@ function hashOf(v: View): number {
 }
 
 /** 别人手里的牌：随机分一种和张数对得上的 */
-function deal(v: View, rng: SeededRng): string[][] {
+export function deal(v: View, rng: SeededRng): string[][] {
   const me = v.me!;
   const gone = new Set<string>([...v.hand]);
   for (const h of v.history) for (const id of h.cards ?? []) gone.add(id);
   const hands: string[][] = [[], [], [], []];
   hands[me] = v.hand.slice();
-  // 进贡、还贡是公开的：收到的那张还没出过就一定在收的人手里
+  // 进贡、还贡是公开的：收到的那张还没出过就一定在收的人手里。
+  // 同一张牌可能进贡后又被原样还回来，以最后一次转手为准
   const t = v.tribute;
   if (t) {
-    for (const x of [...t.pairs, ...t.returns]) {
-      if (x.to === me || gone.has(x.card) || v.counts[x.to] <= hands[x.to].length) continue;
-      hands[x.to].push(x.card);
-      gone.add(x.card);
+    const holder = new Map<string, Seat>();
+    for (const x of [...t.pairs, ...t.returns]) holder.set(x.card, x.to);
+    for (const [card, to] of holder) {
+      if (to === me || gone.has(card) || v.counts[to] <= hands[to].length) continue;
+      hands[to].push(card);
+      gone.add(card);
     }
   }
   const pool = rng.shuffle(makeDeck().filter((id) => !gone.has(id)));
@@ -94,10 +97,11 @@ function viewFor(s: State, seat: Seat): View {
   };
 }
 
-const keyOf = (a: Action) => (a.type === 'play' ? a.cards.slice().sort().join() : a.type);
+// 同一组牌可能有几种出法（顺子 / 同花顺），牌型和主值也算进去
+const keyOf = (a: Action) => (a.type === 'play' ? `${a.cards.slice().sort().join()}|${a.as?.kind}|${a.as?.main}` : a.type);
 const toAction = (m: Move): Action => ({ type: 'play', cards: m.cards, as: m.as });
 
-function candidates(v: View, first: Action): Action[] {
+export function candidates(v: View, first: Action): Action[] {
   const list: Action[] = [first];
   const seen = new Set([keyOf(first)]);
   const add = (a: Action) => {
