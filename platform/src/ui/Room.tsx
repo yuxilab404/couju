@@ -190,7 +190,11 @@ function Waiting({ st, session, def }: { st: RoomState; session: RoomSession; de
 
       <section className="card">
         <h3>座位</h3>
-        <p className="muted small">开局时随机排座：这里只决定谁上桌、谁旁观，不决定坐哪儿</p>
+        <p className="muted small">
+          {teams
+            ? '开局时随机排座、分队，之后再来一局不换：这里只决定谁上桌、谁旁观'
+            : '每局开局时随机排座：这里只决定谁上桌、谁旁观，不决定坐哪儿'}
+        </p>
         <div className="seats">
           {room.seats.map((slot, i) => {
             const m = slot.kind === 'human' ? mm.get(slot.userId) : undefined;

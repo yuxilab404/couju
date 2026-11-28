@@ -262,6 +262,36 @@ describe('HostEngine 开局随机排座', () => {
     expect(JSON.parse(io.checkpoint).game.seatKeys[seatOf(2)]).toBe('u2');
   });
 
+  /** 全桌都由 bot 出（真人已托管），等它打完 */
+  async function playOut() {
+    for (let i = 0; i < 40 && io.lastSync(1)!.room.phase === 'playing'; i++) await vi.advanceTimersByTimeAsync(150);
+  }
+
+  it('再来一局：没有队伍的游戏重新随机排座；有队伍的游戏座位不变', async () => {
+    const teamed = { ...toy, id: 'toyteam', teams: (n: number) => Array.from({ length: n }, (_, i) => i % 2) };
+    for (const [def, keep] of [[toy, false], [teamed, true]] as const) {
+      io = new IO();
+      // 只有一个真人、其他都是 bot：bot 自己打完
+      const h = new HostEngine([def], io, [member(1)], null, { botDelayMs: [100, 100], freeze: true });
+      h.setSeatCount(4);
+      const layouts = new Set<string>();
+      h.start();
+      await flush();
+      const first = JSON.stringify(io.lastSync(1)!.room.seats);
+      for (let i = 0; i < 12; i++) {
+        // 真人也托管，整局让 bot 打完
+        h.onRelay(1, { k: 'auto', on: true });
+        await playOut();
+        expect(io.lastSync(1)!.room.phase).toBe('ended');
+        h.rematch();
+        await flush();
+        layouts.add(JSON.stringify(io.lastSync(1)!.room.seats));
+      }
+      if (keep) expect([...layouts]).toEqual([first]);
+      else expect(layouts.size).toBeGreaterThan(1);
+    }
+  });
+
   it('多次开局座位分布不总一样', async () => {
     const h = new HostEngine([toy], io, [member(1), member(2), member(3)], null, { botDelayMs: [100, 100], freeze: true });
     h.setSeatCount(3);

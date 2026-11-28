@@ -214,12 +214,17 @@ export class HostEngine {
     return null;
   }
 
+  /** 从等人页开局：随机排座 */
   start(): void {
+    this.begin(true);
+  }
+
+  private begin(shuffle: boolean): void {
     if (this.canStart() !== null) return;
     const def = this.currentDef() as TurnGame;
     // 空座按 bot 补满，再随机排座：等人时坐哪儿只决定谁上桌，不决定开局的座位
     this.seats = this.seats.map((s) => (s.kind === 'empty' ? { kind: 'bot' } : s));
-    if (this.shuffleSeats) this.seats = this.shuffled(this.seats);
+    if (shuffle && this.shuffleSeats) this.seats = this.shuffled(this.seats);
     const seed = Math.floor(this.random() * 2 ** 32);
     const rng = SeededRng.fromSeed(seed);
     const numPlayers = this.seats.length;
@@ -251,12 +256,16 @@ export class HostEngine {
     this.schedule();
   }
 
-  /** 结算后同座位再来一局 */
+  /**
+   * 结算后再来一局。有固定队伍的游戏（声明了 teams，比如掼蛋）座位定了就不换，免得拆散队伍；
+   * 其他游戏每局重新随机排座。
+   */
   rematch(): void {
     if (this.phase !== 'ended') return;
+    const keepSeats = this.currentDef().teams !== undefined;
     this.phase = 'waiting';
     this.game = null;
-    this.start();
+    this.begin(!keepSeats);
   }
 
   backToRoom(): void {
