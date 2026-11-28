@@ -187,6 +187,8 @@
 .resultTitle { font-size: 20px; font-weight: 700; color: #ffd54f; }
 
 .actions button.alt { background: #4db6ac; color: #00332e; font-size: 14px; }
+/* 预留一行按钮的高度，有没有备选解释都不让上面的按钮和下面的手牌移位 */
+.altRow { min-height: 34px; }
 
 .tribute {
   display: flex;

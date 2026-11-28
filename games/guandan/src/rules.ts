@@ -16,7 +16,7 @@ import { countNatural, isJoker, isWild, makeDeck, rankOf, sortCards, valueOf } f
 import { interpret, isBomb, KIND_NAME, type Kind, type Pattern } from './patterns.ts';
 
 export const PLAY_MS = 30_000;
-export const TRIBUTE_MS = 20_000;
+export const TRIBUTE_MS = 60_000;
 export const HANDOVER_MS = 20_000;
 export const ACE = 14;
 
